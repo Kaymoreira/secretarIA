@@ -130,7 +130,7 @@ O servidor backend expõe os seguintes endpoints:
 - **Kayque Costa Moreira**
   - QA Tester
   - [GitHub](https://github.com/Kaymoreira)
-  - [LinkedIn](https://www.linkedin.com/in/seu-linkedin/) <--- (Atualize com seu link!)
+  - [LinkedIn](https://www.linkedin.com/in/kaymoreira/)
 
 ## 📄 Licença
 
