@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent, ChangeEvent, Dispatch, SetStateAction } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { FiTrash2 } from 'react-icons/fi'; // Ícone de lixeira
 
 interface Message {
   id: string;
@@ -10,13 +11,16 @@ interface Message {
   timestamp: Date;
 }
 
-export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([]);
+interface ChatProps {
+  messages: Message[];
+  setMessages: Dispatch<SetStateAction<Message[]>>;
+}
+
+export default function Chat({ messages, setMessages }: ChatProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
-  // Rola para o final das mensagens sempre que uma nova mensagem é adicionada
   useEffect(() => {
     if (endOfMessagesRef.current) {
       endOfMessagesRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -27,21 +31,18 @@ export default function Chat() {
     e.preventDefault();
     if (!newMessage.trim() || isLoading) return;
 
-    // Cria a mensagem do usuário
     const userMessage: Message = {
       id: Date.now().toString(),
       content: newMessage,
       sender: 'user',
       timestamp: new Date(),
     };
-
-    // Adiciona a mensagem do usuário à lista
+    
     setMessages((prev) => [...prev, userMessage]);
     setNewMessage('');
     setIsLoading(true);
 
     try {
-      // Envia a mensagem para o backend
       const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
         headers: {
@@ -57,28 +58,22 @@ export default function Chat() {
 
       const data = await response.json();
       
-      // Cria a mensagem da IA
       const aiMessage: Message = {
         id: Date.now().toString(),
         content: data.response,
         sender: 'ai',
         timestamp: new Date(),
       };
-
-      // Adiciona a mensagem da IA à lista
+      
       setMessages((prev) => [...prev, aiMessage]);
 
-      // Se um evento foi criado (precisaríamos atualizar o calendário)
       if (data.eventCreated) {
         console.log("Evento criado via chat, calendário precisaria ser atualizado.");
-        // Exemplo: Poderia haver uma função passada por props para recarregar eventos
-        // props.onEventCreated();
       }
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       
-      // Mensagem de erro caso algo dê errado
       const errorMessage: Message = {
         id: Date.now().toString(),
         content: error instanceof Error ? error.message : 'Erro desconhecido ao buscar resposta.',
@@ -92,7 +87,6 @@ export default function Chat() {
     }
   };
 
-  // Função para formatar as datas
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('pt-BR', {
       hour: '2-digit',
@@ -100,7 +94,6 @@ export default function Chat() {
     }).format(new Date(date));
   };
 
-  // Função para lidar com a tecla Enter
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -112,8 +105,23 @@ export default function Chat() {
     setNewMessage(e.target.value);
   };
 
+  const handleResetChat = () => {
+    setMessages([]);
+  };
+
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-md">
+      <div className="p-3 border-b flex justify-between items-center bg-gray-50">
+        <h2 className="text-lg font-semibold text-gray-700">Chat com SecretarIA</h2>
+        <button 
+          onClick={handleResetChat}
+          className="text-gray-500 hover:text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+          title="Limpar conversa"
+        >
+          <FiTrash2 size={18} />
+        </button>
+      </div>
+      
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 my-8">
@@ -126,16 +134,10 @@ export default function Chat() {
           messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${
-                message.sender === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[70%] rounded-lg p-3 relative ${
-                  message.sender === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-100'
-                }`}
+                className={`max-w-[70%] rounded-lg p-3 relative ${message.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-100'}`}
               >
                 {message.sender === 'ai' ? (
                   <ReactMarkdown
@@ -152,9 +154,7 @@ export default function Chat() {
                   message.content
                 )}
                 <div
-                  className={`text-xs mt-1 ${
-                    message.sender === 'user' ? 'text-purple-200' : 'text-gray-500'
-                  }`}
+                  className={`text-xs mt-1 ${message.sender === 'user' ? 'text-purple-200' : 'text-gray-500'}`}
                 >
                   {formatDate(message.timestamp)}
                 </div>

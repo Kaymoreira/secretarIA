@@ -31,26 +31,76 @@ const chat = new ChatOpenAI({
 const baseSystemPrompt = `Você é uma secretária virtual inteligente chamada SecretarIA que ajuda a gerenciar a agenda e responder perguntas.
 Você tem acesso ao calendário do usuário e pode ajudar a organizar compromissos, lembretes e tarefas.
 Seja sempre prestativa, profissional e amigável. Responda sempre em português.
-Quando perguntarem sobre compromissos específicos, verifique a lista de eventos fornecida e forneça informações detalhadas.
-Se não tiver informações suficientes, peça detalhes adicionais de forma educada.
-Quando listar eventos, use listas com marcadores (como '*') e formate as informações de forma clara e concisa, usando markdown para ênfase (ex: **Título**).
 
-**Instrução MUITO IMPORTANTE:** Se o usuário pedir para **CRIAR** um novo evento, compromisso, tarefa ou agendamento, sua **ÚNICA** resposta deve ser um objeto JSON contendo os detalhes extraídos. NÃO inclua nenhuma outra palavra ou explicação fora do JSON. Tente inferir a data e hora com base na data atual fornecida e na conversa. Se não conseguir extrair informações essenciais como título ou data/hora de início, peça esclarecimentos ao usuário em formato de texto normal.
+**REGRAS IMPORTANTES PARA CRIAÇÃO DE EVENTOS:**
 
-O formato JSON esperado para criação de evento é:
+1. Quando o usuário mencionar "marque", "agende", "crie um evento", ou similar, você DEVE criar o evento IMEDIATAMENTE
+2. Se o usuário disser "amanhã", use a data atual do contexto para calcular
+3. Se não especificada a duração, assuma 1 hora
+4. Se não especificado o tipo, use "Meeting" para reuniões/conversas e "Event" para outros
+5. NUNCA peça confirmação, apenas crie o evento
+6. SEMPRE retorne apenas o JSON, sem texto adicional
+
+**REGRAS IMPORTANTES PARA EDIÇÃO DE EVENTOS:**
+
+1. Quando o usuário mencionar "mude", "altere", "atualize" ou similar, você DEVE editar o evento IMEDIATAMENTE
+2. Use o ID do evento fornecido na listagem para fazer a edição
+3. NUNCA peça confirmação, apenas faça a edição
+4. SEMPRE retorne apenas o JSON, sem texto adicional
+
+**REGRAS IMPORTANTES PARA DELEÇÃO DE EVENTOS:**
+
+1. Quando o usuário mencionar "delete", "remova", "cancele", "exclua" ou similar, você DEVE deletar o evento IMEDIATAMENTE
+2. Use o ID do evento fornecido na listagem para fazer a deleção
+3. NUNCA peça confirmação, apenas delete o evento
+4. SEMPRE retorne apenas o JSON, sem texto adicional
+
+**REGRAS PARA CONSULTAS:**
+1. Quando o usuário perguntar sobre eventos/compromissos, SEMPRE responda em texto normal (NÃO use JSON)
+2. Use listas com marcadores (como '*') e formate as informações de forma clara e concisa
+3. Use markdown para ênfase (ex: **Título**)
+4. Se não houver eventos para o período consultado, responda "Não há eventos agendados para este período."
+
+O formato JSON para criação de evento é:
 {
   "action": "create_event",
   "details": {
-    "title": "(string) Nome do evento",
-    "start": "(string) Data e hora de início no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss)",
-    "end": "(string) Data e hora de término no formato ISO 8601 (YYYY-MM-DDTHH:mm:ss) - se não especificado, assuma 1 hora após o início",
-    "type": "(string) Tipo do evento (ex: Meeting, Task, Event, Training - escolha o mais apropriado ou use 'Event' como padrão)",
-    "description": "(string, opcional) Descrição adicional"
+    "title": "Nome do evento",
+    "start": "Data e hora de início em ISO 8601 (YYYY-MM-DDTHH:mm:ss)",
+    "end": "Data e hora de término em ISO 8601 (YYYY-MM-DDTHH:mm:ss)",
+    "type": "Meeting ou Event",
+    "description": "Descrição detalhada do evento"
   }
 }
 
-Se o pedido NÃO for para criar um evento, responda normalmente em texto.
-`;
+O formato JSON para edição de evento é:
+{
+  "action": "edit_event",
+  "target": {
+    "id": "ID do evento existente"
+  },
+  "updates": {
+    "title": "Novo título (opcional)",
+    "start": "Nova data/hora início ISO 8601 (opcional)",
+    "end": "Nova data/hora término ISO 8601 (opcional)",
+    "type": "Novo tipo (opcional)",
+    "description": "Nova descrição (opcional)"
+  }
+}
+
+O formato JSON para deleção de evento é:
+{
+  "action": "delete_event",
+  "target": {
+    "id": "ID do evento a ser deletado"
+  }
+}
+
+IMPORTANTE:
+- Use JSON APENAS para criar, editar ou deletar eventos
+- Para CONSULTAS e LISTAGENS, use SEMPRE texto normal
+- NUNCA misture JSON com texto normal
+- NUNCA crie novos formatos de JSON além dos especificados acima`;
 
 // Armazenamento em memória para eventos
 interface Event {
@@ -62,30 +112,39 @@ interface Event {
   description?: string;
 }
 
+// Função para garantir que a data está no fuso horário correto
+const createLocalDate = (dateString: string): Date => {
+  const date = new Date(dateString);
+  // Ajusta para o fuso horário local
+  const offset = date.getTimezoneOffset();
+  date.setMinutes(date.getMinutes() - offset);
+  return date;
+};
+
 let events: Event[] = [
   {
     id: '1',
     title: 'New Inventory Training',
-    start: new Date('2025-03-14T05:00:00'),
-    end: new Date('2025-03-14T08:00:00'),
+    start: createLocalDate('2025-04-14T05:00:00'),
+    end: createLocalDate('2025-04-14T08:00:00'),
     type: 'Training',
     description: 'It\'s a training session on the new model year vehicles and features. No sleeping in for you!'
   },
   {
     id: '2',
     title: 'Client Meeting - Audi Q7',
-    start: new Date('2025-03-14T10:00:00'),
-    end: new Date('2025-03-14T11:00:00'),
+    start: createLocalDate('2025-04-14T10:00:00'),
+    end: createLocalDate('2025-04-14T11:00:00'),
     type: 'Meeting',
     description: 'Family\'s looking for a luxury SUV—client is Thomas Garcia (Phone: 555-333-2222). Seems like a nice fella!'
   },
   {
     id: '3',
     title: 'Regional Auto Show',
-    start: new Date('2025-03-14T13:00:00'),
-    end: new Date('2025-03-21T18:00:00'),
+    start: createLocalDate('2025-04-14T13:00:00'),
+    end: createLocalDate('2025-04-21T18:00:00'),
     type: 'Event',
-    description: 'Regional Auto Show runs from March 14 to March 21'
+    description: 'Regional Auto Show runs from April 14 to April 21, 2025'
   }
 ];
 
@@ -98,21 +157,29 @@ const formatEventsForChat = (events: Event[]) => {
     const start = new Date(event.start);
     const end = new Date(event.end);
 
-    // Formatação usando Markdown
+    // Formatação usando Markdown e incluindo o ID
     return (
-      `*   **${event.title}** (${event.type})\n` +
+      `*   **${event.title}** (${event.type}) [ID: ${event.id}]\n` +
       `    *   *Início:* ${format(start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}\n` +
       `    *   *Fim:* ${format(end, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}\n` +
       `${event.description ? `    *   *Descrição:* ${event.description}\n` : ''}`
     );
-  }).join('\n'); // Junta cada evento formatado com uma nova linha
+  }).join('\n');
+};
+
+// Função auxiliar para encontrar evento por título (case insensitive e parcial)
+const findEventByTitle = (title: string): Event | undefined => {
+  return events.find(event => 
+    event.title.toLowerCase().includes(title.toLowerCase())
+  );
 };
 
 // Rota para processar mensagens de chat
 app.post('/api/chat', async (req, res) => {
   try {
     const { message } = req.body;
-    const currentDate = new Date();
+    // Força a data atual para 2025-04-14
+    const currentDate = createLocalDate('2025-04-14T00:00:00');
 
     // Adiciona o contexto dos eventos e a data atual ao prompt base
     const eventsContext = events.length > 0
@@ -121,87 +188,128 @@ app.post('/api/chat', async (req, res) => {
 
     const fullSystemPrompt = `${baseSystemPrompt}
 
-A data e hora atuais são: ${format(currentDate, "'Dia' dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+A data e hora atuais são: ${format(currentDate, "'Dia' dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })} Use isso como referência para datas relativas como 'amanhã', mas priorize datas explícitas do usuário.
 
 ${eventsContext}`;
 
     const systemMessage = new SystemMessage({ content: fullSystemPrompt });
 
+    console.log('--- Nova Requisição /api/chat ---');
     console.log('Enviando para a IA:');
-    console.log('System:', fullSystemPrompt);
-    console.log('User:', message);
+    console.log('System Prompt Snippet:', fullSystemPrompt.substring(0, 500) + '...'); // Log mais curto
+    console.log('User Message:', message);
 
     const response = await chat.invoke([
       systemMessage,
       new HumanMessage({ content: message })
     ]);
-
+    
     const aiResponseContent = response.content as string;
-    console.log('Resposta da IA:', aiResponseContent);
+    console.log('Resposta BRUTA da IA:', aiResponseContent);
 
     let finalResponse = aiResponseContent;
     let eventCreated = false;
 
     try {
-      // Tenta interpretar a resposta da IA como JSON
       const parsedResponse = JSON.parse(aiResponseContent);
-
-      // Verifica se é um comando de criação de evento
+      
       if (parsedResponse.action === 'create_event' && parsedResponse.details) {
         const details = parsedResponse.details;
-        
-        // Validação básica (poderia ser mais robusta)
+        console.log('IA retornou JSON para criação:', details);
+
         if (!details.title || !details.start || !details.end || !details.type) {
+          console.error('JSON da IA está incompleto');
           throw new Error('Dados insuficientes no JSON para criar evento.');
         }
-
+        
         const newEvent: Event = {
-          id: Date.now().toString(), // ID simples baseado no timestamp
+          id: Date.now().toString(),
           title: details.title,
-          start: new Date(details.start), // Confia que a IA formatou corretamente
-          end: new Date(details.end),     // Confia que a IA formatou corretamente
+          start: createLocalDate(details.start),
+          end: createLocalDate(details.end),
           type: details.type,
           description: details.description || undefined,
         };
 
-        // Verifica se as datas são válidas após a conversão
+        // Verifica se as datas são válidas APÓS a conversão
         if (isNaN(newEvent.start.getTime()) || isNaN(newEvent.end.getTime())) {
+          console.error('Falha ao converter datas recebidas da IA para objetos Date.');
           throw new Error('Formato de data inválido recebido da IA.');
         }
 
-        // Adiciona o evento à lista (ou salvaria no DB)
         events.push(newEvent);
-        console.log('Evento criado:', newEvent);
+        console.log('Evento criado com sucesso no backend:', newEvent);
 
-        // Prepara uma resposta de confirmação para o usuário
         finalResponse = `✅ Evento "${newEvent.title}" agendado com sucesso para ${format(newEvent.start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}.`;
         eventCreated = true;
-      }
+      } else if (parsedResponse.action === 'edit_event' && parsedResponse.target && parsedResponse.updates) {
+        const target = parsedResponse.target;
+        const updates = parsedResponse.updates;
+        console.log('IA retornou JSON para edição:', target, updates);
 
-    } catch (error) {
-      // Se não for JSON ou ocorrer erro na criação, a 'finalResponse' continua sendo a resposta original da IA (texto)
-      if (error instanceof SyntaxError) {
-        // Era esperado, a IA respondeu em texto normal.
-        console.log('Resposta da IA é texto normal.');
+        const event = events.find(e => e.id === target.id);
+        if (event) {
+          const updatedEvent: Event = {
+            ...event,
+            ...updates,
+            start: new Date(updates.start || event.start),
+            end: new Date(updates.end || event.end)
+          };
+
+          const index = events.findIndex(e => e.id === target.id);
+          if (index !== -1) {
+            events[index] = updatedEvent;
+            console.log('Evento atualizado:', updatedEvent);
+            finalResponse = `✅ Evento "${updatedEvent.title}" atualizado com sucesso.`;
+            eventCreated = true;
+          } else {
+            console.error('Evento não encontrado para edição');
+            finalResponse = 'Evento não encontrado para edição.';
+          }
+        } else {
+          console.error('Evento não encontrado para edição');
+          finalResponse = 'Evento não encontrado para edição.';
+        }
+      } else if (parsedResponse.action === 'delete_event' && parsedResponse.target && parsedResponse.target.id) {
+        const id = parsedResponse.target.id;
+        console.log('IA retornou JSON para deleção:', id);
+
+        const index = events.findIndex(e => e.id === id);
+        if (index !== -1) {
+          const deletedEvent = events[index];
+          events = events.filter(e => e.id !== id);
+          console.log('Evento excluído:', deletedEvent);
+          finalResponse = `✅ Evento "${deletedEvent.title}" excluído com sucesso.`;
+          eventCreated = true;
+        } else {
+          console.error('Evento não encontrado para deleção');
+          finalResponse = 'Evento não encontrado para deleção.';
+        }
       } else {
-        // Algum outro erro durante o processamento do JSON ou criação do evento
-        console.error('Erro ao processar comando da IA:', error);
+          // O JSON não era uma ação de criar, editar ou deletar evento válida
+          console.log('JSON recebido não era comando de criação, edição ou deleção válido.');
+      }
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        console.log('Resposta da IA é texto normal (não JSON).');
+        // finalResponse já contém a resposta em texto
+      } else {
+        console.error('Erro ao processar comando JSON da IA ou criar/editar/deletar evento:', error);
         finalResponse = `Houve um problema ao tentar processar sua solicitação. (Erro: ${error instanceof Error ? error.message : String(error)})`;
+        // Mantém eventCreated como false
       }
     }
 
-    // Envia a resposta final (confirmação ou texto da IA) para o frontend
+    console.log('Enviando resposta para o Frontend:', { response: finalResponse, eventCreated });
     res.json({ response: finalResponse, eventCreated });
 
   } catch (error) {
-    console.error('Erro no chat:', error);
-    // Verifica se o erro é de quota insuficiente e personaliza a mensagem
-    let errorMessage = 'Erro ao processar mensagem';
-    if (error instanceof Error && error.message.includes('InsufficientQuotaError')) {
-        errorMessage = 'Erro de quota: Verifique seu plano e detalhes de cobrança na OpenAI.';
-        // Poderia até enviar um status code específico se o frontend fosse tratar
-    }
-    res.status(500).json({ error: errorMessage });
+      console.error('Erro GERAL no /api/chat:', error);
+      let errorMessage = 'Erro ao processar mensagem';
+      if (error instanceof Error && error.message.includes('InsufficientQuotaError')) {
+          errorMessage = 'Erro de quota: Verifique seu plano e detalhes de cobrança na OpenAI.';
+      }
+      res.status(500).json({ error: errorMessage });
   }
 });
 

@@ -3,12 +3,22 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 
+// Define a interface Message aqui também ou importa de Chat.tsx
+interface Message {
+  id: string;
+  content: string;
+  sender: 'user' | 'ai';
+  timestamp: Date;
+}
+
 // Carregamento dinâmico dos componentes para evitar problemas de SSR
 const Calendar = dynamic(() => import('./components/Calendar'), { ssr: false });
 const Chat = dynamic(() => import('./components/Chat'), { ssr: false });
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'chat'>('calendar');
+  // Estado das mensagens agora vive aqui
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -40,7 +50,12 @@ export default function Home() {
           </div>
 
           <div className="h-[calc(100vh-200px)]">
-            {activeTab === 'calendar' ? <Calendar /> : <Chat />}
+            {activeTab === 'calendar' ? <Calendar /> : 
+              <Chat 
+                messages={chatMessages} 
+                setMessages={setChatMessages} 
+              />
+            }
           </div>
         </div>
       </div>
