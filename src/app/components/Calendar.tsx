@@ -1,7 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameDay, addYears, subYears } from 'date-fns';
+import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  eachDayOfInterval, 
+  addMonths, 
+  subMonths, 
+  isSameDay, 
+  addYears, 
+  subYears,
+  startOfWeek,
+  endOfWeek,
+  eachWeekOfInterval,
+  addDays
+} from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface Event {
@@ -33,7 +47,15 @@ export default function Calendar() {
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const calendarStart = startOfWeek(monthStart, { locale: ptBR });
+  const calendarEnd = endOfWeek(monthEnd, { locale: ptBR });
+  const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+  // Gera os nomes dos dias da semana começando com Domingo
+  const weekDays = eachDayOfInterval({
+    start: startOfWeek(new Date(), { locale: ptBR }),
+    end: endOfWeek(new Date(), { locale: ptBR })
+  }).map(day => format(day, 'EEE', { locale: ptBR }));
 
   // Busca eventos do backend
   useEffect(() => {
@@ -354,17 +376,20 @@ export default function Calendar() {
 
       {viewMode === 'month' && (
         <div className="grid grid-cols-7 gap-2">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
+          {weekDays.map((day) => (
             <div key={day} className="text-center font-bold">
               {day}
             </div>
           ))}
           {days.map((day) => {
             const dayEvents = getEventsForDay(day);
+            const isCurrentMonth = day.getMonth() === currentDate.getMonth();
+            
             return (
               <div
                 key={day.toISOString()}
                 className={`border p-2 min-h-[100px] cursor-pointer ${
+                  !isCurrentMonth ? 'bg-gray-50 text-gray-400' :
                   isSameDay(day, new Date()) ? 'bg-purple-50 border-purple-300' : ''
                 }`}
                 onClick={() => handleDateClick(day)}
