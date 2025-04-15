@@ -5,6 +5,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { format } from 'date-fns'; // Usaremos para formatar a data atual para a IA
 import { ptBR } from 'date-fns/locale';
+import NotificationService from './services/NotificationService';
 
 // Carrega as variáveis de ambiente do arquivo .env
 config();
@@ -17,6 +18,13 @@ app.use(express.json());
 const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) {
   console.error('ERRO: OPENAI_API_KEY não definida no arquivo .env');
+  process.exit(1);
+}
+
+// Verifica se as configurações de email estão definidas
+if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD || !process.env.NOTIFICATION_EMAIL) {
+  console.error('ERRO: Configurações de email não definidas no arquivo .env');
+  console.error('Por favor, defina EMAIL_USER, EMAIL_APP_PASSWORD e NOTIFICATION_EMAIL');
   process.exit(1);
 }
 
@@ -37,9 +45,11 @@ Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 1. Quando o usuário mencionar "marque", "agende", "crie um evento", ou similar, você DEVE criar o evento IMEDIATAMENTE
 2. Se o usuário disser "amanhã", use a data atual do contexto para calcular
 3. Se não especificada a duração, assuma 1 hora
-4. Se não especificado o tipo, use "Meeting" para reuniões/conversas e "Event" para outros
+4. Se não especificado o tipo, use "Reunião" para reuniões/conversas e "Evento" para outros
 5. NUNCA peça confirmação, apenas crie o evento
 6. SEMPRE retorne apenas o JSON, sem texto adicional
+7. SEMPRE salve os títulos e descrições em português
+8. Use "Reunião" ou "Evento" como tipos (não use "Meeting" ou "Event")
 
 **REGRAS IMPORTANTES PARA EDIÇÃO DE EVENTOS:**
 
@@ -47,6 +57,7 @@ Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 2. Use o ID do evento fornecido na listagem para fazer a edição
 3. NUNCA peça confirmação, apenas faça a edição
 4. SEMPRE retorne apenas o JSON, sem texto adicional
+5. SEMPRE mantenha os títulos e descrições em português
 
 **REGRAS IMPORTANTES PARA DELEÇÃO DE EVENTOS:**
 
@@ -55,21 +66,25 @@ Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 3. NUNCA peça confirmação, apenas delete o evento
 4. SEMPRE retorne apenas o JSON, sem texto adicional
 
-**REGRAS PARA CONSULTAS:**
-1. Quando o usuário perguntar sobre eventos/compromissos, SEMPRE responda em texto normal (NÃO use JSON)
-2. Use listas com marcadores (como '*') e formate as informações de forma clara e concisa
-3. Use markdown para ênfase (ex: **Título**)
-4. Se não houver eventos para o período consultado, responda "Não há eventos agendados para este período."
+**REGRAS PARA CONSULTAS DE AGENDA:**
+1. Quando o usuário perguntar sobre eventos/compromissos, SEMPRE liste TODOS os eventos FUTUROS
+2. Para consultas sobre "agenda da semana", mostre todos os eventos dos próximos 7 dias
+3. Para consultas sobre "agenda do dia" ou "hoje", mostre eventos do dia atual
+4. Para consultas sobre "amanhã", mostre eventos do dia seguinte
+5. Use listas com marcadores (como '*') e formate as informações de forma clara e concisa
+6. Use markdown para ênfase (ex: **Título**)
+7. Se não houver eventos para o período consultado, responda "Não há eventos agendados para este período."
+8. SEMPRE inclua a data, hora e descrição (se houver) dos eventos
 
 O formato JSON para criação de evento é:
 {
   "action": "create_event",
   "details": {
-    "title": "Nome do evento",
+    "title": "Nome do evento em português",
     "start": "Data e hora de início em ISO 8601 (YYYY-MM-DDTHH:mm:ss)",
     "end": "Data e hora de término em ISO 8601 (YYYY-MM-DDTHH:mm:ss)",
-    "type": "Meeting ou Event",
-    "description": "Descrição detalhada do evento"
+    "type": "Reunião ou Evento",
+    "description": "Descrição detalhada do evento em português"
   }
 }
 
@@ -80,11 +95,11 @@ O formato JSON para edição de evento é:
     "id": "ID do evento existente"
   },
   "updates": {
-    "title": "Novo título (opcional)",
+    "title": "Novo título em português (opcional)",
     "start": "Nova data/hora início ISO 8601 (opcional)",
     "end": "Nova data/hora término ISO 8601 (opcional)",
-    "type": "Novo tipo (opcional)",
-    "description": "Nova descrição (opcional)"
+    "type": "Reunião ou Evento (opcional)",
+    "description": "Nova descrição em português (opcional)"
   }
 }
 
@@ -100,7 +115,9 @@ IMPORTANTE:
 - Use JSON APENAS para criar, editar ou deletar eventos
 - Para CONSULTAS e LISTAGENS, use SEMPRE texto normal
 - NUNCA misture JSON com texto normal
-- NUNCA crie novos formatos de JSON além dos especificados acima`;
+- NUNCA crie novos formatos de JSON além dos especificados acima
+- SEMPRE considere eventos FUTUROS ao responder consultas sobre a agenda
+- SEMPRE use português para títulos, tipos e descrições de eventos`;
 
 // Armazenamento em memória para eventos
 interface Event {
@@ -112,39 +129,37 @@ interface Event {
   description?: string;
 }
 
-// Função para garantir que a data está no fuso horário correto
-const createLocalDate = (dateString: string): Date => {
-  const date = new Date(dateString);
-  // Ajusta para o fuso horário local
-  const offset = date.getTimezoneOffset();
-  date.setMinutes(date.getMinutes() - offset);
-  return date;
+// Função para ajustar o fuso horário
+const adjustTimeZone = (date: Date): Date => {
+  // Removendo o ajuste automático do fuso horário
+  // pois as datas já vêm no fuso horário local do usuário
+  return new Date(date);
 };
 
 let events: Event[] = [
   {
     id: '1',
     title: 'New Inventory Training',
-    start: createLocalDate('2025-04-14T05:00:00'),
-    end: createLocalDate('2025-04-14T08:00:00'),
+    start: adjustTimeZone(new Date('2025-04-13T05:00:00')),
+    end: adjustTimeZone(new Date('2025-04-13T08:00:00')),
     type: 'Training',
     description: 'It\'s a training session on the new model year vehicles and features. No sleeping in for you!'
   },
   {
     id: '2',
     title: 'Client Meeting - Audi Q7',
-    start: createLocalDate('2025-04-14T10:00:00'),
-    end: createLocalDate('2025-04-14T11:00:00'),
+    start: adjustTimeZone(new Date('2025-04-13T10:00:00')),
+    end: adjustTimeZone(new Date('2025-04-13T11:00:00')),
     type: 'Meeting',
     description: 'Family\'s looking for a luxury SUV—client is Thomas Garcia (Phone: 555-333-2222). Seems like a nice fella!'
   },
   {
     id: '3',
     title: 'Regional Auto Show',
-    start: createLocalDate('2025-04-14T13:00:00'),
-    end: createLocalDate('2025-04-21T18:00:00'),
+    start: adjustTimeZone(new Date('2025-04-13T13:00:00')),
+    end: adjustTimeZone(new Date('2025-04-20T18:00:00')),
     type: 'Event',
-    description: 'Regional Auto Show runs from April 14 to April 21, 2025'
+    description: 'Regional Auto Show runs from April 13 to April 20, 2025'
   }
 ];
 
@@ -174,12 +189,19 @@ const findEventByTitle = (title: string): Event | undefined => {
   );
 };
 
+// Inicializa o serviço de notificações com a lista de eventos
+const notificationService = new NotificationService(events);
+
+// Atualiza o serviço de notificações quando eventos são modificados
+const updateNotificationService = async () => {
+  await notificationService.updateEvents(events);
+};
+
 // Rota para processar mensagens de chat
 app.post('/api/chat', async (req, res) => {
   try {
     const { message } = req.body;
-    // Força a data atual para 2025-04-14
-    const currentDate = createLocalDate('2025-04-14T00:00:00');
+    const currentDate = new Date();
 
     // Adiciona o contexto dos eventos e a data atual ao prompt base
     const eventsContext = events.length > 0
@@ -222,12 +244,17 @@ ${eventsContext}`;
           throw new Error('Dados insuficientes no JSON para criar evento.');
         }
         
+        // Garante que o tipo seja "Reunião" ou "Evento"
+        const type = details.type === 'Meeting' ? 'Reunião' : 
+                    details.type === 'Event' ? 'Evento' : 
+                    details.type;
+
         const newEvent: Event = {
           id: Date.now().toString(),
           title: details.title,
-          start: createLocalDate(details.start),
-          end: createLocalDate(details.end),
-          type: details.type,
+          start: adjustTimeZone(new Date(details.start)),
+          end: adjustTimeZone(new Date(details.end)),
+          type: type,
           description: details.description || undefined,
         };
 
@@ -237,7 +264,18 @@ ${eventsContext}`;
           throw new Error('Formato de data inválido recebido da IA.');
         }
 
+        // Primeiro adiciona o evento à lista
         events.push(newEvent);
+
+        try {
+          // Envia a notificação imediata
+          await notificationService.sendImmediateNotification(newEvent);
+        } catch (error) {
+          console.error('Falha ao enviar notificação imediata:', error);
+        }
+
+        // Atualiza o serviço de notificações com a nova lista
+        await updateNotificationService();
         console.log('Evento criado com sucesso no backend:', newEvent);
 
         finalResponse = `✅ Evento "${newEvent.title}" agendado com sucesso para ${format(newEvent.start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}.`;
@@ -249,11 +287,19 @@ ${eventsContext}`;
 
         const event = events.find(e => e.id === target.id);
         if (event) {
+          // Garante que o tipo seja "Reunião" ou "Evento" se estiver sendo atualizado
+          const type = updates.type ? 
+                      (updates.type === 'Meeting' ? 'Reunião' : 
+                       updates.type === 'Event' ? 'Evento' : 
+                       updates.type) : 
+                      event.type;
+
           const updatedEvent: Event = {
             ...event,
             ...updates,
-            start: new Date(updates.start || event.start),
-            end: new Date(updates.end || event.end)
+            type: type,
+            start: adjustTimeZone(new Date(updates.start || event.start)),
+            end: adjustTimeZone(new Date(updates.end || event.end))
           };
 
           const index = events.findIndex(e => e.id === target.id);
@@ -318,14 +364,15 @@ app.get('/api/events', (req, res) => {
   res.json(events);
 });
 
-// Rota para criar um novo evento (usada pelo frontend e agora talvez pela IA)
+// Rota para criar um novo evento
 app.post('/api/events', (req, res) => {
   const event: Event = {
     ...req.body,
-    start: new Date(req.body.start), // Garante que as datas sejam objetos Date
-    end: new Date(req.body.end)
+    start: adjustTimeZone(new Date(req.body.start)),
+    end: adjustTimeZone(new Date(req.body.end))
   };
   events.push(event);
+  updateNotificationService();
   console.log('Evento criado via POST direto:', event);
   res.status(201).json(event);
 });
@@ -347,13 +394,14 @@ app.put('/api/events/:id', (req, res) => {
   }
   
   const updatedEvent: Event = {
-     ...events[index],
-     ...req.body,
-     start: new Date(req.body.start || events[index].start),
-     end: new Date(req.body.end || events[index].end)
+    ...events[index],
+    ...req.body,
+    start: adjustTimeZone(new Date(req.body.start || events[index].start)),
+    end: adjustTimeZone(new Date(req.body.end || events[index].end))
   };
 
   events[index] = updatedEvent;
+  updateNotificationService();
   console.log('Evento atualizado:', updatedEvent);
   res.json(events[index]);
 });
@@ -367,6 +415,7 @@ app.delete('/api/events/:id', (req, res) => {
   
   const deletedEvent = events[index];
   events = events.filter(e => e.id !== req.params.id);
+  updateNotificationService(); // Atualiza o serviço de notificações
   console.log('Evento excluído:', deletedEvent);
   res.json(deletedEvent);
 });
