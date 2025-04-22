@@ -139,47 +139,68 @@ const adjustTimeZone = (date: Date): Date => {
 let events: Event[] = [
   {
     id: '1',
-    title: 'New Inventory Training',
+    title: 'Treinamento de Novo Inventário',
     start: adjustTimeZone(new Date('2025-04-13T05:00:00')),
     end: adjustTimeZone(new Date('2025-04-13T08:00:00')),
-    type: 'Training',
-    description: 'It\'s a training session on the new model year vehicles and features. No sleeping in for you!'
+    type: 'Treinamento',
+    description: 'É uma sessão de treinamento sobre os novos veículos e recursos do modelo do ano. Nada de dormir até mais tarde!'
   },
   {
     id: '2',
-    title: 'Client Meeting - Audi Q7',
+    title: 'Reunião com Cliente - Audi Q7',
     start: adjustTimeZone(new Date('2025-04-13T10:00:00')),
     end: adjustTimeZone(new Date('2025-04-13T11:00:00')),
-    type: 'Meeting',
-    description: 'Family\'s looking for a luxury SUV—client is Thomas Garcia (Phone: 555-333-2222). Seems like a nice fella!'
+    type: 'Reunião',
+    description: 'Família procurando por um SUV de luxo — cliente é Thomas Garcia (Telefone: 555-333-2222). Parece ser uma pessoa simpática!'
   },
   {
     id: '3',
-    title: 'Regional Auto Show',
+    title: 'Feira Regional de Automóveis',
     start: adjustTimeZone(new Date('2025-04-13T13:00:00')),
     end: adjustTimeZone(new Date('2025-04-20T18:00:00')),
-    type: 'Event',
-    description: 'Regional Auto Show runs from April 13 to April 20, 2025'
+    type: 'Evento',
+    description: 'A Feira Regional de Automóveis acontece de 13 a 20 de abril de 2025'
   }
 ];
 
 // Função auxiliar para formatar os eventos para o chat
 const formatEventsForChat = (events: Event[]) => {
   if (events.length === 0) {
-    return 'Nenhum evento agendado.';
+    return 'Não há eventos agendados para este período.';
   }
-  return events.map(event => {
-    const start = new Date(event.start);
-    const end = new Date(event.end);
 
-    // Formatação usando Markdown e incluindo o ID
-    return (
-      `*   **${event.title}** (${event.type}) [ID: ${event.id}]\n` +
-      `    *   *Início:* ${format(start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}\n` +
-      `    *   *Fim:* ${format(end, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}\n` +
-      `${event.description ? `    *   *Descrição:* ${event.description}\n` : ''}`
-    );
-  }).join('\n');
+  // Ordena os eventos por data de início
+  const sortedEvents = [...events].sort((a, b) => a.start.getTime() - b.start.getTime());
+  
+  // Agrupa eventos por dia
+  const eventsByDay = sortedEvents.reduce((acc, event) => {
+    const dateKey = format(event.start, 'dd/MM/yyyy', { locale: ptBR });
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(event);
+    return acc;
+  }, {} as Record<string, Event[]>);
+
+  // Formata a saída agrupada por dia
+  return Object.entries(eventsByDay)
+    .map(([date, dayEvents]) => {
+      const dayStr = `📅 **${date}**\n`;
+      const eventsStr = dayEvents
+        .map(event => {
+          const start = format(event.start, "HH:mm", { locale: ptBR });
+          const end = format(event.end, "HH:mm", { locale: ptBR });
+          let eventStr = `  • **${event.title}** (${event.type})\n`;
+          eventStr += `    ⏰ ${start} - ${end}`;
+          if (event.description) {
+            eventStr += `\n    📝 ${event.description}`;
+          }
+          return eventStr;
+        })
+        .join('\n\n');
+      return `${dayStr}${eventsStr}`;
+    })
+    .join('\n\n');
 };
 
 // Função auxiliar para encontrar evento por título (case insensitive e parcial)

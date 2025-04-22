@@ -1,64 +1,76 @@
 'use client';
 
+import { Box, Container, Flex } from '@chakra-ui/react';
+import Calendar from './components/Calendar';
+import Chat from './components/Chat';
+import PasswordManager from './components/PasswordManager';
 import { useState } from 'react';
-import dynamic from 'next/dynamic';
-
-// Define a interface Message aqui também ou importa de Chat.tsx
-interface Message {
-  id: string;
-  content: string;
-  sender: 'user' | 'ai';
-  timestamp: Date;
-}
-
-// Carregamento dinâmico dos componentes para evitar problemas de SSR
-const Calendar = dynamic(() => import('./components/Calendar'), { ssr: false });
-const Chat = dynamic(() => import('./components/Chat'), { ssr: false });
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'calendar' | 'chat'>('calendar');
-  // Estado das mensagens agora vive aqui
-  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [activeTab, setActiveTab] = useState('calendar');
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-4">
-        <h1 className="text-3xl font-bold mb-6">SecretarIA</h1>
-        
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="flex border-b">
-            <button
-              className={`px-6 py-3 ${
-                activeTab === 'calendar'
-                  ? 'bg-purple-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
+    <Box minH="100vh" bg="gray.50">
+      <Container maxW="container.xl" py={4}>
+        <Box 
+          bg="white" 
+          borderRadius="lg" 
+          boxShadow="lg" 
+          overflow="hidden"
+        >
+          <Flex borderBottom="1px" borderColor="gray.200">
+            <Box
+              as="button"
+              px={8}
+              py={4}
+              fontWeight="semibold"
+              color={activeTab === 'calendar' ? 'white' : 'gray.600'}
+              bg={activeTab === 'calendar' ? 'purple.500' : 'transparent'}
               onClick={() => setActiveTab('calendar')}
+              _hover={{ bg: activeTab === 'calendar' ? 'purple.600' : 'gray.100' }}
+              transition="all 0.2s"
+              borderRight="1px"
+              borderColor="gray.200"
             >
               Calendário
-            </button>
-            <button
-              className={`px-6 py-3 ${
-                activeTab === 'chat'
-                  ? 'bg-purple-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
+            </Box>
+            <Box
+              as="button"
+              px={8}
+              py={4}
+              fontWeight="semibold"
+              color={activeTab === 'chat' ? 'white' : 'gray.600'}
+              bg={activeTab === 'chat' ? 'purple.500' : 'transparent'}
               onClick={() => setActiveTab('chat')}
+              _hover={{ bg: activeTab === 'chat' ? 'purple.600' : 'gray.100' }}
+              transition="all 0.2s"
+              borderRight="1px"
+              borderColor="gray.200"
             >
               Chat
-            </button>
-          </div>
+            </Box>
+            <Box
+              as="button"
+              px={8}
+              py={4}
+              fontWeight="semibold"
+              color={activeTab === 'passwords' ? 'white' : 'gray.600'}
+              bg={activeTab === 'passwords' ? 'purple.500' : 'transparent'}
+              onClick={() => setActiveTab('passwords')}
+              _hover={{ bg: activeTab === 'passwords' ? 'purple.600' : 'gray.100' }}
+              transition="all 0.2s"
+            >
+              Senhas
+            </Box>
+          </Flex>
 
-          <div className="h-[calc(100vh-200px)]">
-            {activeTab === 'calendar' ? <Calendar /> : 
-              <Chat 
-                messages={chatMessages} 
-                setMessages={setChatMessages} 
-              />
-            }
-          </div>
-        </div>
-      </div>
-    </main>
+          <Box p={6} minH="calc(100vh - 120px)">
+            {activeTab === 'calendar' && <Calendar />}
+            {activeTab === 'chat' && <Chat />}
+            {activeTab === 'passwords' && <PasswordManager />}
+          </Box>
+        </Box>
+      </Container>
+    </Box>
   );
 } 
