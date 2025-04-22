@@ -17,6 +17,10 @@ import {
   addDays
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { FiEdit2, FiTrash2 } from 'react-icons/fi';
+import EventModal from './EventModal';
+import EventDetailModal from './EventDetailModal';
+import Logo from './Logo';
 
 interface Event {
   id: string;
@@ -29,7 +33,22 @@ interface Event {
 
 type ViewMode = 'month' | 'year' | 'agenda';
 
-export default function Calendar() {
+const getEventColor = (type: string) => {
+  switch (type.toLowerCase()) {
+    case 'treinamento':
+      return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'reunião':
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'evento':
+      return 'bg-green-100 text-green-800 border-green-200';
+    case 'tarefa':
+      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    default:
+      return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
+};
+
+const Calendar: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<Event[]>([]);
   const [showEventModal, setShowEventModal] = useState(false);
@@ -44,6 +63,9 @@ export default function Calendar() {
     start: new Date(),
     end: new Date()
   });
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -110,11 +132,17 @@ export default function Calendar() {
     setShowEventModal(true);
   };
 
-  const handleEventClick = (event: Event) => {
+  const handleEventClick = (event: Event, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
     setSelectedEvent(event);
+    setShowDetailModal(true);
   };
 
-  const closeEventDetail = () => {
+  const handleEventSave = async (updatedEvent: Event) => {
+    await fetchEvents(); // Recarrega os eventos após salvar
+    setIsModalOpen(false);
     setSelectedEvent(null);
   };
 
@@ -261,22 +289,42 @@ export default function Calendar() {
               {eventsByDate[dateKey].map(event => (
                 <div 
                   key={event.id} 
-                  className={`p-2 rounded-lg ${
-                    event.type === 'Meeting' ? 'bg-purple-100' : 
-                    event.type === 'Training' ? 'bg-blue-100' : 'bg-green-100'
-                  } relative`}
+                  className={`p-2 rounded-lg ${getEventColor(event.type)} relative`}
                   onClick={() => handleEventClick(event)}
                 >
-                  <div className="font-semibold">{event.title}</div>
-                  <div className="text-sm">
-                    {format(new Date(event.start), 'HH:mm')} - {format(new Date(event.end), 'HH:mm')}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold">{event.title}</h3>
+                      <p className="text-sm text-gray-600">
+                        {format(new Date(event.start), "HH:mm", { locale: ptBR })} - {format(new Date(event.end), "HH:mm", { locale: ptBR })}
+                      </p>
+                      {event.description && (
+                        <p className="text-sm text-gray-600 mt-1">{event.description}</p>
+                      )}
+                    </div>
+                    <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEventClick(event);
+                        }}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        title="Editar evento"
+                      >
+                        <FiEdit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDelete(event, e);
+                        }}
+                        className="p-1 hover:bg-red-100 rounded text-red-600"
+                        title="Excluir evento"
+                      >
+                        <FiTrash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <button 
-                    className="absolute right-2 top-2 text-red-500 hover:text-red-700" 
-                    onClick={(e) => confirmDelete(event, e)}
-                  >
-                    ✕
-                  </button>
                 </div>
               ))}
             </div>
@@ -286,17 +334,26 @@ export default function Calendar() {
     );
   };
 
+  const handleEditEvent = (event: Event) => {
+    setSelectedEvent(event);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditClick = () => {
+    setShowDetailModal(false);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteClick = () => {
+    setShowDetailModal(false);
+    setEventToDelete(selectedEvent);
+    setShowDeleteConfirm(true);
+  };
+
   return (
     <div className="p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">
-          {viewMode === 'month' 
-            ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
-            : viewMode === 'year' 
-              ? format(currentDate, 'yyyy', { locale: ptBR })
-              : 'Agenda'
-          }
-        </h2>
+      <div className="flex justify-between items-center mb-8">
+        <Logo className="scale-110" />
         <div className="flex gap-2">
           {viewMode === 'month' && (
             <>
@@ -388,36 +445,22 @@ export default function Calendar() {
             return (
               <div
                 key={day.toISOString()}
-                className={`border p-2 min-h-[100px] cursor-pointer ${
+                className={`border p-2 min-h-[120px] cursor-pointer ${
                   !isCurrentMonth ? 'bg-gray-50 text-gray-400' :
                   isSameDay(day, new Date()) ? 'bg-purple-50 border-purple-300' : ''
                 }`}
                 onClick={() => handleDateClick(day)}
               >
-                <div className="font-semibold">{format(day, 'd')}</div>
-                <div className="overflow-y-auto max-h-[80px]">
+                <div className="font-semibold mb-1">{format(day, 'd')}</div>
+                <div className="space-y-1">
                   {dayEvents.map((event) => (
                     <div
                       key={event.id}
-                      className={`p-1 mb-1 rounded text-sm text-white ${
-                        event.type === 'Meeting' ? 'bg-purple-600' : 
-                        event.type === 'Training' ? 'bg-blue-500' : 'bg-green-500'
-                      } relative group`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEventClick(event);
-                      }}
+                      onClick={(e) => handleEventClick(event, e)}
+                      className={`cursor-pointer p-1 mb-1 rounded text-sm ${getEventColor(event.type)} border`}
                     >
-                      <span>{event.title}</span>
-                      <button 
-                        className="hidden group-hover:block absolute right-1 top-1/2 -translate-y-1/2 text-white hover:text-red-200 text-xs" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          confirmDelete(event, e);
-                        }}
-                      >
-                        ✕
-                      </button>
+                      <div className="font-semibold truncate">{event.title}</div>
+                      <div className="text-xs truncate">{format(new Date(event.start), 'HH:mm')}</div>
                     </div>
                   ))}
                 </div>
@@ -499,10 +542,10 @@ export default function Calendar() {
                   onChange={handleInputChange}
                   className="w-full border rounded-lg p-2"
                 >
-                  <option value="Meeting">Reunião</option>
-                  <option value="Training">Treinamento</option>
-                  <option value="Event">Evento</option>
-                  <option value="Task">Tarefa</option>
+                  <option value="reunião">Reunião</option>
+                  <option value="treinamento">Treinamento</option>
+                  <option value="evento">Evento</option>
+                  <option value="tarefa">Tarefa</option>
                 </select>
               </div>
               
@@ -540,65 +583,28 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Modal de detalhes do evento */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">{selectedEvent.title}</h3>
-              <button 
-                onClick={closeEventDetail}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="flex items-center">
-                <span className="font-medium w-24">Data:</span>
-                <span>{format(new Date(selectedEvent.start), 'dd/MM/yyyy')}</span>
-              </div>
-              
-              <div className="flex items-center">
-                <span className="font-medium w-24">Horário:</span>
-                <span>
-                  {format(new Date(selectedEvent.start), 'HH:mm')} - 
-                  {format(new Date(selectedEvent.end), 'HH:mm')}
-                </span>
-              </div>
-              
-              <div className="flex items-center">
-                <span className="font-medium w-24">Tipo:</span>
-                <span>{selectedEvent.type}</span>
-              </div>
-              
-              {selectedEvent.description && (
-                <div>
-                  <p className="font-medium mb-1">Descrição:</p>
-                  <p className="text-gray-700 bg-gray-50 p-3 rounded">
-                    {selectedEvent.description}
-                  </p>
-                </div>
-              )}
-            </div>
-            
-            <div className="flex justify-between gap-2 mt-6">
-              <button
-                onClick={() => confirmDelete(selectedEvent)}
-                className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-50"
-              >
-                Deletar Evento
-              </button>
-              <button
-                onClick={closeEventDetail}
-                className="px-4 py-2 border rounded-lg"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+        <>
+          <EventDetailModal
+            event={selectedEvent}
+            isOpen={showDetailModal}
+            onClose={() => {
+              setShowDetailModal(false);
+              setSelectedEvent(null);
+            }}
+            onEdit={handleEditClick}
+            onDelete={handleDeleteClick}
+          />
+          <EventModal
+            event={selectedEvent}
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setSelectedEvent(null);
+            }}
+            onSave={handleEventSave}
+          />
+        </>
       )}
 
       {/* Modal de confirmação de exclusão */}
@@ -628,6 +634,54 @@ export default function Calendar() {
           </div>
         </div>
       )}
+
+      {/* Modal de Edição */}
+      {isEditModalOpen && selectedEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Editar Evento</h3>
+            <form className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Título</label>
+                <input
+                  type="text"
+                  value={selectedEvent.title}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tipo</label>
+                <select
+                  value={selectedEvent.type}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                >
+                  <option value="treinamento">Treinamento</option>
+                  <option value="reunião">Reunião</option>
+                  <option value="evento">Evento</option>
+                </select>
+              </div>
+              {/* Adicione mais campos conforme necessário */}
+              <div className="flex justify-end space-x-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
-} 
+};
+
+export default Calendar; 
