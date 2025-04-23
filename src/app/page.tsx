@@ -1,10 +1,23 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { Box, Container, Flex } from '@chakra-ui/react';
-import Calendar from './components/Calendar';
-import Chat from './components/Chat';
-import PasswordManager from './components/PasswordManager';
 import { useState } from 'react';
+
+const Calendar = dynamic(() => import('./components/Calendar'), {
+  ssr: false,
+  loading: () => <div>Carregando...</div>
+});
+
+const Chat = dynamic(() => import('./components/Chat'), {
+  ssr: false,
+  loading: () => <div>Carregando...</div>
+});
+
+const PasswordManager = dynamic(() => import('./components/PasswordManager'), {
+  ssr: false,
+  loading: () => <div>Carregando...</div>
+});
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('calendar');

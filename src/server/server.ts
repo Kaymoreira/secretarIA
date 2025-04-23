@@ -54,17 +54,23 @@ Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 **REGRAS IMPORTANTES PARA EDIÇÃO DE EVENTOS:**
 
 1. Quando o usuário mencionar "mude", "altere", "atualize" ou similar, você DEVE editar o evento IMEDIATAMENTE
-2. Use o ID do evento fornecido na listagem para fazer a edição
-3. NUNCA peça confirmação, apenas faça a edição
-4. SEMPRE retorne apenas o JSON, sem texto adicional
-5. SEMPRE mantenha os títulos e descrições em português
+2. Para identificar o evento, use o título mais próximo ao que o usuário mencionou
+3. Se o usuário mencionar uma data (ex: "evento do dia 27"), procure pelo evento nessa data
+4. SEMPRE verifique a lista de eventos atual antes de responder que não encontrou o evento
+5. Se houver mais de um evento na data mencionada, liste os eventos disponíveis e peça mais detalhes
+6. NUNCA peça confirmação para a edição em si, apenas faça a edição
+7. SEMPRE retorne apenas o JSON para a edição
+8. SEMPRE mantenha os títulos e descrições em português
 
 **REGRAS IMPORTANTES PARA DELEÇÃO DE EVENTOS:**
 
 1. Quando o usuário mencionar "delete", "remova", "cancele", "exclua" ou similar, você DEVE deletar o evento IMEDIATAMENTE
-2. Use o ID do evento fornecido na listagem para fazer a deleção
-3. NUNCA peça confirmação, apenas delete o evento
-4. SEMPRE retorne apenas o JSON, sem texto adicional
+2. Para identificar o evento, use o título mais próximo ao que o usuário mencionou
+3. Se o usuário mencionar uma data (ex: "evento do dia 27"), procure pelo evento nessa data
+4. SEMPRE verifique a lista de eventos atual antes de responder que não encontrou o evento
+5. Se houver mais de um evento na data mencionada, liste os eventos disponíveis e peça mais detalhes
+6. NUNCA peça confirmação para a deleção em si, apenas delete
+7. SEMPRE retorne apenas o JSON para a deleção
 
 **REGRAS PARA CONSULTAS DE AGENDA:**
 1. Quando o usuário perguntar sobre eventos/compromissos, SEMPRE liste TODOS os eventos FUTUROS
@@ -75,6 +81,7 @@ Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 6. Use markdown para ênfase (ex: **Título**)
 7. Se não houver eventos para o período consultado, responda "Não há eventos agendados para este período."
 8. SEMPRE inclua a data, hora e descrição (se houver) dos eventos
+9. SEMPRE verifique a lista de eventos atual antes de responder
 
 O formato JSON para criação de evento é:
 {
@@ -92,7 +99,7 @@ O formato JSON para edição de evento é:
 {
   "action": "edit_event",
   "target": {
-    "id": "ID do evento existente"
+    "id": "Título do evento ou parte dele"
   },
   "updates": {
     "title": "Novo título em português (opcional)",
@@ -107,7 +114,7 @@ O formato JSON para deleção de evento é:
 {
   "action": "delete_event",
   "target": {
-    "id": "ID do evento a ser deletado"
+    "id": "Título do evento ou parte dele"
   }
 }
 
@@ -117,7 +124,10 @@ IMPORTANTE:
 - NUNCA misture JSON com texto normal
 - NUNCA crie novos formatos de JSON além dos especificados acima
 - SEMPRE considere eventos FUTUROS ao responder consultas sobre a agenda
-- SEMPRE use português para títulos, tipos e descrições de eventos`;
+- SEMPRE use português para títulos, tipos e descrições de eventos
+- SEMPRE verifique a lista de eventos atual antes de responder
+- Se o usuário perguntar sobre uma data específica, SEMPRE verifique se há eventos nessa data
+- Para edição e deleção, use o título mais próximo ao que o usuário mencionou`;
 
 // Armazenamento em memória para eventos
 interface Event {
@@ -163,18 +173,86 @@ let events: Event[] = [
   }
 ];
 
-// Função auxiliar para formatar os eventos para o chat
-const formatEventsForChat = (events: Event[]) => {
-  if (events.length === 0) {
-    return 'Não há eventos agendados para este período.';
+// Função para filtrar eventos baseado no tipo de consulta
+const filterEvents = (events: Event[], query: string): Event[] => {
+  const currentDate = new Date();
+  const normalizedQuery = query.toLowerCase();
+
+  // Se a consulta for sobre eventos passados
+  if (normalizedQuery.includes('passado') || normalizedQuery.includes('anterior')) {
+    return events.filter(event => event.start < currentDate);
   }
 
-  // Ordena os eventos por data de início
-  const sortedEvents = [...events].sort((a, b) => a.start.getTime() - b.start.getTime());
+  // Se a consulta for sobre a semana
+  if (normalizedQuery.includes('semana')) {
+    const endOfWeek = new Date(currentDate);
+    endOfWeek.setDate(currentDate.getDate() + 7);
+    return events.filter(event => 
+      event.start >= currentDate && 
+      event.start <= endOfWeek
+    );
+  }
+
+  // Se a consulta for sobre próximos dias/futuros
+  if (normalizedQuery.includes('proximo') || 
+      normalizedQuery.includes('próximo') || 
+      normalizedQuery.includes('futuro')) {
+    return events.filter(event => event.start >= currentDate);
+  }
+
+  // Se a consulta for sobre hoje
+  if (normalizedQuery.includes('hoje')) {
+    const endOfDay = new Date(currentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    return events.filter(event => 
+      event.start >= currentDate && 
+      event.start <= endOfDay
+    );
+  }
+
+  // Se a consulta for sobre amanhã
+  if (normalizedQuery.includes('amanha') || normalizedQuery.includes('amanhã')) {
+    const tomorrow = new Date(currentDate);
+    tomorrow.setDate(currentDate.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    const endOfTomorrow = new Date(tomorrow);
+    endOfTomorrow.setHours(23, 59, 59, 999);
+    return events.filter(event => 
+      event.start >= tomorrow && 
+      event.start <= endOfTomorrow
+    );
+  }
+
+  // Por padrão, retorna eventos futuros
+  return events.filter(event => event.start >= currentDate);
+};
+
+// Função auxiliar para formatar os eventos para o chat
+const formatEventsForChat = (events: Event[], query: string) => {
+  const filteredEvents = filterEvents(events, query);
+
+  if (filteredEvents.length === 0) {
+    if (query.toLowerCase().includes('passado')) {
+      return 'Não encontrei nenhum evento passado no seu calendário. Que tal agendar algo novo? 😊';
+    }
+    if (query.toLowerCase().includes('semana')) {
+      return 'Sua semana está livre! Nenhum compromisso agendado. Quer marcar algo? 📅';
+    }
+    if (query.toLowerCase().includes('hoje')) {
+      return 'Você está com o dia livre hoje! Nenhum compromisso marcado. 🌟';
+    }
+    if (query.toLowerCase().includes('amanha') || query.toLowerCase().includes('amanhã')) {
+      return 'Amanhã está livre! Nenhum compromisso agendado ainda. ✨';
+    }
+    return 'Não encontrei nenhum evento para este período. Posso ajudar você a agendar algo? 🗓️';
+  }
+
+  // Ordena os eventos
+  const sortedEvents = [...filteredEvents].sort((a, b) => a.start.getTime() - b.start.getTime());
   
   // Agrupa eventos por dia
   const eventsByDay = sortedEvents.reduce((acc, event) => {
-    const dateKey = format(event.start, 'dd/MM/yyyy', { locale: ptBR });
+    const dateKey = format(event.start, "EEEE, dd 'de' MMMM", { locale: ptBR });
     if (!acc[dateKey]) {
       acc[dateKey] = [];
     }
@@ -182,25 +260,63 @@ const formatEventsForChat = (events: Event[]) => {
     return acc;
   }, {} as Record<string, Event[]>);
 
+  // Formata o cabeçalho da resposta
+  let response = '';
+  if (query.toLowerCase().includes('passado')) {
+    response = 'Aqui está o histórico dos seus eventos passados:\n\n';
+  } else if (query.toLowerCase().includes('semana')) {
+    response = 'Aqui está o que você tem programado para esta semana:\n\n';
+  } else if (query.toLowerCase().includes('hoje')) {
+    response = 'Aqui está sua programação para hoje:\n\n';
+  } else if (query.toLowerCase().includes('amanha') || query.toLowerCase().includes('amanhã')) {
+    response = 'Aqui está sua programação para amanhã:\n\n';
+  } else if (query.toLowerCase().includes('proximo') || query.toLowerCase().includes('próximo')) {
+    response = 'Aqui estão seus próximos compromissos:\n\n';
+  } else {
+    response = 'Aqui estão os eventos encontrados:\n\n';
+  }
+
   // Formata a saída agrupada por dia
-  return Object.entries(eventsByDay)
+  response += Object.entries(eventsByDay)
     .map(([date, dayEvents]) => {
-      const dayStr = `📅 **${date}**\n`;
+      // Capitaliza o primeiro caractere do dia da semana
+      const formattedDate = date.charAt(0).toUpperCase() + date.slice(1);
+      const dayStr = `${formattedDate}\n`;
+      
       const eventsStr = dayEvents
         .map(event => {
           const start = format(event.start, "HH:mm", { locale: ptBR });
           const end = format(event.end, "HH:mm", { locale: ptBR });
-          let eventStr = `  • **${event.title}** (${event.type})\n`;
-          eventStr += `    ⏰ ${start} - ${end}`;
-          if (event.description) {
-            eventStr += `\n    📝 ${event.description}`;
+          
+          let eventStr = '\n';
+          eventStr += `🕐 ${start} às ${end}\n`;
+          eventStr += `📌 ${event.title}\n`;
+          
+          if (event.type) {
+            const emoji = event.type === 'Reunião' ? '👥' : 
+                         event.type === 'Treinamento' ? '📚' :
+                         '🎯';
+            eventStr += `${emoji} ${event.type}\n`;
           }
+          
+          if (event.description) {
+            eventStr += `ℹ️ ${event.description}\n`;
+          }
+          
           return eventStr;
         })
-        .join('\n\n');
-      return `${dayStr}${eventsStr}`;
+        .join('\n');
+        
+      return `📅 ${dayStr}${eventsStr}`;
     })
-    .join('\n\n');
+    .join('\n');
+
+  // Adiciona uma nota final amigável
+  if (sortedEvents.length > 0) {
+    response += '\n\nPosso ajudar você com mais alguma coisa? 😊';
+  }
+
+  return response;
 };
 
 // Função auxiliar para encontrar evento por título (case insensitive e parcial)
@@ -226,7 +342,7 @@ app.post('/api/chat', async (req, res) => {
 
     // Adiciona o contexto dos eventos e a data atual ao prompt base
     const eventsContext = events.length > 0
-      ? `Aqui estão os seus eventos agendados atualmente:\n${formatEventsForChat(events)}`
+      ? `Aqui estão os eventos solicitados:\n${formatEventsForChat(events, message)}`
       : 'Não há eventos agendados no momento.';
 
     const fullSystemPrompt = `${baseSystemPrompt}
@@ -306,7 +422,17 @@ ${eventsContext}`;
         const updates = parsedResponse.updates;
         console.log('IA retornou JSON para edição:', target, updates);
 
-        const event = events.find(e => e.id === target.id);
+        // Primeiro tenta encontrar o evento pelo ID exato
+        let event = events.find(e => e.id === target.id);
+        
+        // Se não encontrar pelo ID, tenta encontrar pelo título
+        if (!event && target.id) {
+          event = events.find(e => 
+            e.title.toLowerCase() === target.id.toLowerCase() ||
+            e.title.toLowerCase().includes(target.id.toLowerCase())
+          );
+        }
+
         if (event) {
           // Garante que o tipo seja "Reunião" ou "Evento" se estiver sendo atualizado
           const type = updates.type ? 
@@ -319,32 +445,41 @@ ${eventsContext}`;
             ...event,
             ...updates,
             type: type,
-            start: adjustTimeZone(new Date(updates.start || event.start)),
-            end: adjustTimeZone(new Date(updates.end || event.end))
+            start: updates.start ? adjustTimeZone(new Date(updates.start)) : event.start,
+            end: updates.end ? adjustTimeZone(new Date(updates.end)) : event.end
           };
 
-          const index = events.findIndex(e => e.id === target.id);
+          const index = events.findIndex(e => e.id === event!.id);
           if (index !== -1) {
             events[index] = updatedEvent;
+            await updateNotificationService();
             console.log('Evento atualizado:', updatedEvent);
             finalResponse = `✅ Evento "${updatedEvent.title}" atualizado com sucesso.`;
             eventCreated = true;
-          } else {
-            console.error('Evento não encontrado para edição');
-            finalResponse = 'Evento não encontrado para edição.';
           }
         } else {
           console.error('Evento não encontrado para edição');
           finalResponse = 'Evento não encontrado para edição.';
         }
-      } else if (parsedResponse.action === 'delete_event' && parsedResponse.target && parsedResponse.target.id) {
-        const id = parsedResponse.target.id;
-        console.log('IA retornou JSON para deleção:', id);
+      } else if (parsedResponse.action === 'delete_event' && parsedResponse.target) {
+        const target = parsedResponse.target;
+        console.log('IA retornou JSON para deleção:', target);
 
-        const index = events.findIndex(e => e.id === id);
-        if (index !== -1) {
-          const deletedEvent = events[index];
-          events = events.filter(e => e.id !== id);
+        // Primeiro tenta encontrar o evento pelo ID exato
+        let eventIndex = events.findIndex(e => e.id === target.id);
+        
+        // Se não encontrar pelo ID, tenta encontrar pelo título
+        if (eventIndex === -1 && target.id) {
+          eventIndex = events.findIndex(e => 
+            e.title.toLowerCase() === target.id.toLowerCase() ||
+            e.title.toLowerCase().includes(target.id.toLowerCase())
+          );
+        }
+
+        if (eventIndex !== -1) {
+          const deletedEvent = events[eventIndex];
+          events.splice(eventIndex, 1);
+          await updateNotificationService();
           console.log('Evento excluído:', deletedEvent);
           finalResponse = `✅ Evento "${deletedEvent.title}" excluído com sucesso.`;
           eventCreated = true;

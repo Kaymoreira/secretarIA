@@ -265,71 +265,54 @@ const Calendar: React.FC = () => {
 
   // Renderiza a visão de agenda
   const renderAgendaView = () => {
-    // Agrupa eventos por data
-    const eventsByDate = events.reduce((acc: {[key: string]: Event[]}, event) => {
-      const dateKey = format(new Date(event.start), 'yyyy-MM-dd');
-      if (!acc[dateKey]) {
-        acc[dateKey] = [];
-      }
-      acc[dateKey].push(event);
-      return acc;
-    }, {});
-
-    // Ordena as datas
-    const sortedDates = Object.keys(eventsByDate).sort();
+    const today = new Date();
+    const futureEvents = events
+      .filter(event => event.start >= today)
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
 
     return (
-      <div className="mt-4 space-y-4">
-        {sortedDates.map(dateKey => (
-          <div key={dateKey} className="border rounded-lg p-3">
-            <h3 className="font-bold text-lg mb-2">
-              {format(new Date(dateKey), 'EEEE, d MMMM yyyy', { locale: ptBR })}
-            </h3>
-            <div className="space-y-2">
-              {eventsByDate[dateKey].map(event => (
-                <div 
-                  key={event.id} 
-                  className={`p-2 rounded-lg ${getEventColor(event.type)} relative`}
-                  onClick={() => handleEventClick(event)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-semibold">{event.title}</h3>
-                      <p className="text-sm text-gray-600">
-                        {format(new Date(event.start), "HH:mm", { locale: ptBR })} - {format(new Date(event.end), "HH:mm", { locale: ptBR })}
-                      </p>
-                      {event.description && (
-                        <p className="text-sm text-gray-600 mt-1">{event.description}</p>
-                      )}
-                    </div>
-                    <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEventClick(event);
-                        }}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        title="Editar evento"
-                      >
-                        <FiEdit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          confirmDelete(event, e);
-                        }}
-                        className="p-1 hover:bg-red-100 rounded text-red-600"
-                        title="Excluir evento"
-                      >
-                        <FiTrash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+      <div className="space-y-4">
+        {futureEvents.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">Nenhum evento futuro encontrado.</p>
+        ) : (
+          futureEvents.map(event => (
+            <div
+              key={event.id}
+              className={`p-3 rounded-lg border ${getEventColor(event.type)} cursor-pointer`}
+              onClick={() => handleEventClick(event)}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-semibold">{event.title}</h3>
+                  <p className="text-sm">
+                    {format(event.start, "dd/MM/yyyy' • 'HH:mm", { locale: ptBR })} - 
+                    {format(event.end, "HH:mm", { locale: ptBR })}
+                  </p>
+                  {event.description && (
+                    <p className="text-sm mt-1">{event.description}</p>
+                  )}
                 </div>
-              ))}
+                <div className="flex space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditEvent(event);
+                    }}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    <FiEdit2 size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => confirmDelete(event, e)}
+                    className="text-gray-600 hover:text-red-600"
+                  >
+                    <FiTrash2 size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     );
   };
@@ -353,7 +336,12 @@ const Calendar: React.FC = () => {
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-8">
-        <Logo className="scale-110" />
+        <div className="flex items-center gap-4">
+          <Logo className="scale-110" />
+          <h2 className="text-2xl font-semibold text-gray-800">
+            {format(currentDate, 'MMMM', { locale: ptBR })} {format(currentDate, 'yyyy')}
+          </h2>
+        </div>
         <div className="flex gap-2">
           {viewMode === 'month' && (
             <>
