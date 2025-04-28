@@ -27,9 +27,17 @@ import {
   Flex,
   Image,
   Divider,
+  ButtonGroup,
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogContent,
+  AlertDialogOverlay,
 } from '@chakra-ui/react';
-import { ViewIcon, ViewOffIcon, LockIcon } from '@chakra-ui/icons';
+import { ViewIcon, ViewOffIcon, LockIcon, EditIcon, DeleteIcon } from '@chakra-ui/icons';
 import Logo from './Logo';
+import React from 'react';
 
 interface Credential {
   _id: string;
@@ -42,9 +50,22 @@ export default function PasswordManager() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [showPassword, setShowPassword] = useState<{ [key: string]: boolean }>({});
   const [newCredential, setNewCredential] = useState({ title: '', login: '', password: '' });
+  const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
+  const [deletingCredential, setDeletingCredential] = useState<Credential | null>(null);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const { 
+    isOpen: isEditOpen, 
+    onOpen: onEditOpen, 
+    onClose: onEditClose 
+  } = useDisclosure();
+  const {
+    isOpen: isDeleteOpen,
+    onOpen: onDeleteOpen,
+    onClose: onDeleteClose
+  } = useDisclosure();
   const toast = useToast();
+  const cancelRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     fetchCredentials();
@@ -96,6 +117,71 @@ export default function PasswordManager() {
 
   const togglePasswordVisibility = (id: string) => {
     setShowPassword(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCredential) return;
+
+    try {
+      const response = await fetch(`/api/credentials/${editingCredential._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingCredential),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: 'Credencial atualizada com sucesso!',
+          status: 'success',
+          duration: 3000,
+          position: 'top-right',
+        });
+        fetchCredentials();
+        onEditClose();
+        setEditingCredential(null);
+      }
+    } catch (error) {
+      console.error('Error updating credential:', error);
+      toast({
+        title: 'Erro ao atualizar credencial',
+        description: 'Por favor, tente novamente.',
+        status: 'error',
+        duration: 3000,
+        position: 'top-right',
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingCredential) return;
+
+    try {
+      const response = await fetch(`/api/credentials/${deletingCredential._id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: 'Credencial excluída com sucesso!',
+          status: 'success',
+          duration: 3000,
+          position: 'top-right',
+        });
+        fetchCredentials();
+        onDeleteClose();
+        setDeletingCredential(null);
+      }
+    } catch (error) {
+      console.error('Error deleting credential:', error);
+      toast({
+        title: 'Erro ao excluir credencial',
+        description: 'Por favor, tente novamente.',
+        status: 'error',
+        duration: 3000,
+        position: 'top-right',
+      });
+    }
   };
 
   return (
@@ -172,6 +258,32 @@ export default function PasswordManager() {
                       />
                     </HStack>
                   </Box>
+                  <ButtonGroup size="sm" width="full" mt={2}>
+                    <Button
+                      leftIcon={<EditIcon />}
+                      colorScheme="purple"
+                      variant="outline"
+                      flex="1"
+                      onClick={() => {
+                        setEditingCredential(cred);
+                        onEditOpen();
+                      }}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      leftIcon={<DeleteIcon />}
+                      colorScheme="red"
+                      variant="outline"
+                      flex="1"
+                      onClick={() => {
+                        setDeletingCredential(cred);
+                        onDeleteOpen();
+                      }}
+                    >
+                      Excluir
+                    </Button>
+                  </ButtonGroup>
                 </Stack>
               </CardBody>
             </Card>
@@ -179,7 +291,7 @@ export default function PasswordManager() {
         </SimpleGrid>
       )}
 
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+      <Modal isOpen={isOpen} onClose={onClose}>
         <ModalOverlay backdropFilter="blur(5px)" />
         <ModalContent>
           <ModalHeader>
@@ -242,6 +354,96 @@ export default function PasswordManager() {
           </ModalBody>
         </ModalContent>
       </Modal>
+
+      <Modal isOpen={isEditOpen} onClose={onEditClose}>
+        <ModalOverlay backdropFilter="blur(5px)" />
+        <ModalContent>
+          <ModalHeader>
+            <HStack>
+              <Box boxSize={8} bg="purple.500" borderRadius="md" p={1.5}>
+                <EditIcon w="100%" h="100%" color="white" />
+              </Box>
+              <Text>Editar Senha</Text>
+            </HStack>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            {editingCredential && (
+              <form onSubmit={handleEdit}>
+                <Stack spacing={4}>
+                  <FormControl isRequired>
+                    <FormLabel>Título</FormLabel>
+                    <Input
+                      value={editingCredential.title}
+                      onChange={(e) => setEditingCredential(prev => ({ ...prev!, title: e.target.value }))}
+                      focusBorderColor="purple.500"
+                    />
+                  </FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Login</FormLabel>
+                    <Input
+                      value={editingCredential.login}
+                      onChange={(e) => setEditingCredential(prev => ({ ...prev!, login: e.target.value }))}
+                      focusBorderColor="purple.500"
+                    />
+                  </FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>Senha</FormLabel>
+                    <InputGroup>
+                      <Input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={editingCredential.password}
+                        onChange={(e) => setEditingCredential(prev => ({ ...prev!, password: e.target.value }))}
+                        focusBorderColor="purple.500"
+                      />
+                      <InputRightElement>
+                        <IconButton
+                          aria-label={showNewPassword ? 'Esconder senha' : 'Mostrar senha'}
+                          icon={showNewPassword ? <ViewOffIcon /> : <ViewIcon />}
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          size="sm"
+                          variant="ghost"
+                          colorScheme="purple"
+                        />
+                      </InputRightElement>
+                    </InputGroup>
+                  </FormControl>
+                  <Button type="submit" colorScheme="purple" size="lg" w="full">
+                    Salvar Alterações
+                  </Button>
+                </Stack>
+              </form>
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+
+      <AlertDialog
+        isOpen={isDeleteOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={onDeleteClose}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Excluir Senha
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              Tem certeza que deseja excluir esta senha? Esta ação não pode ser desfeita.
+            </AlertDialogBody>
+
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={onDeleteClose}>
+                Cancelar
+              </Button>
+              <Button colorScheme="red" onClick={handleDelete} ml={3}>
+                Excluir
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 } 
