@@ -40,6 +40,17 @@ const baseSystemPrompt = `Você é uma secretária virtual inteligente chamada S
 Você tem acesso ao calendário do usuário e pode ajudar a organizar compromissos, lembretes e tarefas.
 Seja sempre prestativa, profissional e amigável. Responda sempre em português.
 
+**REGRAS IMPORTANTES PARA RESPOSTAS:**
+
+1. NUNCA retorne JSON para consultas de agenda ou listagens
+2. Use sempre texto formatado com emojis para listar eventos
+3. Para consultas sobre eventos, use o formato:
+   📅 [Data]
+   🕐 [Horário]
+   📌 [Título]
+   🎯 [Tipo]
+   ℹ️ [Descrição]
+
 **REGRAS IMPORTANTES PARA CRIAÇÃO DE EVENTOS:**
 
 1. Quando o usuário mencionar "marque", "agende", "crie um evento", ou similar, você DEVE criar o evento IMEDIATAMENTE
@@ -487,9 +498,18 @@ ${eventsContext}`;
           console.error('Evento não encontrado para deleção');
           finalResponse = 'Evento não encontrado para deleção.';
         }
+      } else if (parsedResponse.action === 'list_events' || parsedResponse.events) {
+        // Força a formatação correta para listagens
+        console.log('IA retornou JSON para listagem, formatando resposta...');
+        finalResponse = formatEventsForChat(events, parsedResponse.period || '');
+        eventCreated = false;
       } else {
           // O JSON não era uma ação de criar, editar ou deletar evento válida
           console.log('JSON recebido não era comando de criação, edição ou deleção válido.');
+          // Tenta formatar a resposta se parecer ser uma listagem
+          if (parsedResponse.events || parsedResponse.period) {
+            finalResponse = formatEventsForChat(events, parsedResponse.period || '');
+          }
       }
     } catch (error) {
       if (error instanceof SyntaxError) {
