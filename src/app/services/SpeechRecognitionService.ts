@@ -72,8 +72,9 @@ export class SpeechRecognitionService {
       console.log('Iniciando inicialização do reconhecimento de voz...');
       console.log('Navegador:', navigator.userAgent);
       
-      // Força o uso do webkitSpeechRecognition para Edge e Chrome
-      const SpeechRecognitionAPI = (window as any).webkitSpeechRecognition;
+      // Tenta usar a implementação padrão primeiro, depois o webkit
+      const SpeechRecognitionAPI = (window as any).SpeechRecognition || 
+                                  (window as any).webkitSpeechRecognition;
       
       if (!SpeechRecognitionAPI) {
         throw new Error('Reconhecimento de voz não é suportado neste navegador');
@@ -96,8 +97,9 @@ export class SpeechRecognitionService {
 
       // Configurações básicas
       this.recognition.lang = 'pt-BR';
-      this.recognition.continuous = true; // Alterado para true para manter escutando
+      this.recognition.continuous = false; // Alterado para false para melhor compatibilidade
       this.recognition.interimResults = true;
+      this.recognition.maxAlternatives = 1; // Adiciona limite de alternativas para consistência
 
       this.setupEventListeners();
       console.log('Reconhecimento de voz inicializado com sucesso');
