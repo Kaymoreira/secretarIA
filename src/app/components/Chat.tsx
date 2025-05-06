@@ -108,7 +108,12 @@ export default function Chat() {
       // Lista de frases que indicam que o usuário quer editar eventos
       const editEventPhrases = [
         'editar evento', 'alterar evento', 'modificar evento', 
-        'atualizar evento', 'mudar evento', 'ajustar evento'
+        'atualizar evento', 'mudar evento', 'ajustar evento',
+        'mudar título', 'alterar título', 'editar título',
+        'mudar data', 'alterar data', 'editar data',
+        'mudar hora', 'alterar hora', 'editar hora',
+        'mudar horário', 'alterar horário', 'editar horário',
+        'mudar descrição', 'alterar descrição', 'editar descrição'
       ];
       
       // Verificar se é uma consulta de visualização de eventos
@@ -308,7 +313,7 @@ export default function Chat() {
       const timeMatch = message.match(/(?:às|as|hora|horário)\s*(\d{1,2})[:\s]?(\d{2})?(?:\s*(?:horas?|h))?/i);
       let timeStr = '';
       
-      if (timeMatch) {
+      if (timeMatch && timeMatch[1]) {
         const hours = timeMatch[1];
         const minutes = timeMatch[2] || '00';
         timeStr = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
@@ -320,7 +325,7 @@ export default function Chat() {
       if (!title || !dateStr || !timeStr) {
         addMessage(
           'Não consegui entender todos os detalhes do evento. Por favor, forneça o título, data e hora do evento.\n\n' +
-          'Exemplo: "Criar evento Reunião de Equipe no dia 15/05 às 14:30"',
+          'Exemplo: "Criar evento Reunião no dia 15/05 às 14:30"',
           false
         );
         return;
@@ -384,18 +389,62 @@ export default function Chat() {
         return;
       }
       
-      // Verificar se o comando inclui um título específico - regex melhorado
-      // Agora pegamos a primeira parte do comando até encontrar "para" ou outra instrução de edição
-      const eventTitleMatch = message.match(/(?:editar|alterar|modificar|atualizar|mudar|ajustar)\s+(?:evento|compromisso|o evento|o)?\s*["']?([^"']+?)["']?(?:\s+(?:para|do dia|dia|data|para o dia|para a data|às|as|mudar|,)|$)/i);
-      let eventTitle = eventTitleMatch ? eventTitleMatch[1].trim() : '';
+      // Verificar se o comando é específico para título, data, hora, etc.
+      const isSpecificTitleCommand = /(?:mudar|alterar|editar|modificar)\s+(?:o\s+)?(?:título|titulo|nome)(?:\s+d[eo])?(?:\s+evento)?/i.test(message);
+      const isSpecificDateCommand = /(?:mudar|alterar|editar|modificar)\s+(?:a\s+)?(?:data)(?:\s+d[eo])?(?:\s+evento)?/i.test(message);
+      const isSpecificTimeCommand = /(?:mudar|alterar|editar|modificar)\s+(?:o\s+)?(?:hora|horário|horario)(?:\s+d[eo])?(?:\s+evento)?/i.test(message);
       
-      // Se o título for muito curto, tente uma abordagem mais agressiva
-      if (eventTitle.length <= 1) {
-        // Tenta pegar qualquer palavra após "editar" e antes de "para"
-        const simpleTitleMatch = message.match(/(?:editar|alterar|modificar|atualizar|mudar)\s+([^\s]+(?:\s+[^\s]+){0,3}?)(?:\s+para|\s+dia|\s+no dia|\s+data|$)/i);
-        if (simpleTitleMatch) {
-          eventTitle = simpleTitleMatch[1].trim();
-          console.log('Título extraído com regex alternativo:', eventTitle);
+      // Verificar explicitamente se o comando é para mudar a data de um evento
+      const dateChangeCommand = /(?:mudar|alterar|editar|modificar)\s+(?:evento|compromisso)(?:.+?)\s+para\s+(?:o\s+)?dia\s+/i.test(message);
+      
+      // NOVO: Verificar se é um comando composto (título + data/hora)
+      const isCompositeCommand = /(?:para|como)\s+([^"'0-9]+?)\s+(?:para|no|dia|em|às|as|,|no dia)/i.test(message);
+      
+      console.log("Tipos de comando detectados:", {
+        isSpecificTitleCommand,
+        isSpecificDateCommand, 
+        isSpecificTimeCommand,
+        dateChangeCommand,
+        isCompositeCommand
+      });
+      
+      // Diferentes estratégias de extração do título do evento baseado no tipo de comando
+      let eventTitle = '';
+      
+      // Para comandos compostos, precisamos ser mais inteligentes na detecção
+      const shouldExtractNewTitle = !dateChangeCommand || isCompositeCommand;
+      
+      if (isSpecificTitleCommand) {
+        // Para comandos do tipo "mudar título do evento X para Y"
+        const titleMatch = message.match(/(?:título|titulo|nome)(?:\s+d[eo])?(?:\s+evento)?\s+(?:d[eo]\s+|)["']?([^"']+?)["']?(?:\s+para|\s+como|\s+$)/i);
+        if (titleMatch) {
+          eventTitle = titleMatch[1].trim();
+          console.log('Título extraído de comando específico para título:', eventTitle);
+        }
+      } 
+      else if (isSpecificDateCommand || isSpecificTimeCommand) {
+        // Para comandos do tipo "mudar data/hora do evento X para Y"
+        const entityMatch = message.match(/(?:data|hora|horário|horario)(?:\s+d[eo])?(?:\s+evento)?\s+(?:d[eo]\s+|)["']?([^"']+?)["']?(?:\s+para|\s+$)/i);
+        if (entityMatch) {
+          eventTitle = entityMatch[1].trim();
+          console.log('Título extraído de comando específico para data/hora:', eventTitle);
+        }
+      }
+      
+      // Se não extraímos o título com métodos específicos, tente o método padrão
+      if (!eventTitle) {
+        // Verificar se o comando inclui um título específico - regex melhorado
+        const eventTitleMatch = message.match(/(?:editar|alterar|modificar|atualizar|mudar|ajustar)\s+(?:evento|compromisso|o evento|o)?\s*["']?([^"']+?)["']?(?:\s+(?:para|do dia|dia|data|para o dia|para a data|às|as|mudar|,)|$)/i);
+        eventTitle = eventTitleMatch ? eventTitleMatch[1].trim() : '';
+        
+        // Se o título for muito curto ou vazio, tente uma abordagem mais agressiva
+        if (!eventTitle || eventTitle.length <= 1) {
+          // Tenta pegar qualquer palavra após comando de edição e antes de "para"
+          const simpleTitleMatch = message.match(/(?:editar|alterar|modificar|atualizar|mudar)\s+([^\s]+(?:\s+[^\s]+){0,3}?)(?:\s+para|\s+dia|\s+no dia|\s+data|$)/i);
+          if (simpleTitleMatch) {
+            eventTitle = simpleTitleMatch[1].trim();
+            console.log('Título extraído com regex alternativo:', eventTitle);
+          }
         }
       }
       
@@ -406,7 +455,10 @@ export default function Chat() {
         const response = EventService.formatEventResponse(events);
         addMessage(
           'Para editar um evento, por favor especifique qual evento deseja modificar. ' +
-          'Você pode usar "editar evento [título do evento] para [nova data/hora/título]".\n\n' +
+          'Você pode usar:\n\n' +
+          '• "editar evento [título] para [nova data/hora/título]"\n' +
+          '• "mudar título do evento [título] para [novo título]"\n' +
+          '• "alterar data do evento [título] para [nova data]"\n\n' +
           'Aqui estão seus próximos eventos:\n\n' + response,
           false
         );
@@ -429,7 +481,9 @@ export default function Chat() {
       if (!eventToEdit && eventTitle.includes(' ')) {
         const titleWords = eventTitle.toLowerCase().split(' ');
         eventToEdit = events.find(event => 
-          titleWords.some(word => event.title.toLowerCase().includes(word))
+          titleWords.some(word => 
+            word.length > 2 && event.title.toLowerCase().includes(word)
+          )
         );
       }
       
@@ -454,11 +508,33 @@ export default function Chat() {
         description?: string;
       } = {};
       
-      // Verificar se o usuário quer alterar o título
-      const newTitleMatch = message.match(/(?:título|nome|para)\s+(?:para\s+)?["']?([^'"0-9]+?)["']?(?:\s+(?:no dia|para o dia|dia|data|às|as|,)|$)/i);
-      if (newTitleMatch) {
-        updateData.title = newTitleMatch[1].trim();
+      // ----- EXTRAÇÃO DE NOVO TÍTULO -----
+      
+      // NOVO: Para comandos compostos, procurar um novo título entre "para" e "para o dia" ou similares
+      if (isCompositeCommand) {
+        const compositeTitleMatch = message.match(/(?:para|como)\s+([^"'0-9]+?)\s+(?:para|no|dia|em|às|as|,|no dia)/i);
+        if (compositeTitleMatch) {
+          updateData.title = compositeTitleMatch[1].trim();
+          console.log('Título extraído de comando composto:', updateData.title);
+        }
       }
+      // Título explícito - se não já foi extraído de um comando composto
+      else if (shouldExtractNewTitle && !updateData.title) {
+        // Verificar se o usuário quer alterar o título - suporta mais formatos
+        const newTitleMatch = message.match(/(?:título|nome|titulo|para|como)\s+(?:para\s+|como\s+)?["']?([^'"0-9]+?)["']?(?:\s+(?:no dia|para o dia|dia|data|às|as|,)|$)/i);
+        
+        // Formato alternativo: "mudar título do evento X para Y"
+        // Importante: captura apenas o novo título após "para", não toda a frase
+        const specificTitleChange = message.match(/(?:mudar|alterar|editar|modificar)(?:\s+(?:o\s+)?(?:título|titulo|nome)(?:\s+d[eo])?(?:\s+evento)?)?(?:\s+.+?)?\s+para\s+["']?([^'"0-9]+?)["']?(?:\s+|$)/i);
+        
+        if (newTitleMatch) {
+          updateData.title = newTitleMatch[1].trim();
+        } else if (specificTitleChange && !message.includes("para o dia") && !message.includes("para dia")) {
+          updateData.title = specificTitleChange[1].trim();
+        }
+      }
+      
+      // ----- EXTRAÇÃO DE DATA E HORA -----
       
       // Verificar se o usuário quer alterar a data
       const dateMatch = message.match(/(?:no dia|para o dia|dia|data|em|para o?)\s*(?:o\s+dia\s+)?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|\d{1,2}\s+de\s+[a-záàâãéèêíïóôõöúçñ]+(?:\s+de\s+\d{2,4})?)/i);
@@ -499,10 +575,10 @@ export default function Chat() {
       }
       
       // Verificar se o usuário quer alterar a hora
-      const timeMatch = message.match(/(?:às|as|hora|horário)\s*(\d{1,2})[:\s]?(\d{2})?(?:\s*(?:horas?|h))?/i);
+      const timeMatch = message.match(/(?:às|as|hora|horário|horario)\s*(\d{1,2})[:\s]?(\d{2})?(?:\s*(?:horas?|h))?/i);
       let timeStr = '';
       
-      if (timeMatch) {
+      if (timeMatch && timeMatch[1]) {
         const hours = timeMatch[1];
         const minutes = timeMatch[2] || '00';
         timeStr = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
@@ -561,7 +637,7 @@ export default function Chat() {
         if (message.match(/\d{1,2}\/\d{1,2}/) || message.match(/\d{1,2}\s+de\s+[a-z]+/i)) {
           const simpleDateMatch = message.match(/(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/);
           
-          if (simpleDateMatch) {
+          if (simpleDateMatch && simpleDateMatch[1]) {
             let dateStr = simpleDateMatch[1];
             if (dateStr.split('/').length === 2) {
               dateStr += '/' + new Date().getFullYear();
@@ -592,8 +668,11 @@ export default function Chat() {
         addMessage(
           'Não consegui entender quais informações você deseja alterar.\n\n' +
           'Você pode editar o título, data, hora ou descrição de um evento. Por exemplo:\n' +
-          '"Editar evento Reunião para título Reunião Importante"\n' +
-          '"Editar evento Dentista para o dia 15/06 às 14:00"\n',
+          '• "Editar evento Reunião para título Reunião Importante"\n' +
+          '• "Editar evento Dentista para o dia 15/06 às 14:00"\n' +
+          '• "Mudar título do evento Apresentação para Apresentação Final"\n' +
+          '• "Alterar data do evento Reunião para 25/05"\n' +
+          '• "Editar evento Reunião para Reunião Importante para o dia 20/05 às 15:00"\n',
           false
         );
         return;
@@ -602,44 +681,87 @@ export default function Chat() {
       console.log('Dados para atualização:', { eventId: eventToEdit.id || eventToEdit._id, updateData });
       
       // Atualizar o evento
-      const eventId = eventToEdit.id || eventToEdit._id;
-      const updatedEvent = await EventService.updateEvent(eventId, updateData);
-      console.log('Evento atualizado:', updatedEvent);
-      
-      // Notificar calendário sobre a atualização
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('atualizarEventosCalendario'));
+      const eventId = eventToEdit.id || eventToEdit._id || '';
+      // Verificar se temos um ID válido antes de prosseguir
+      if (!eventId) {
+        addMessage(
+          'Não foi possível identificar o ID do evento para edição. Por favor, tente novamente.',
+          false
+        );
+        return;
       }
       
-      // Criar mensagem de resposta com as alterações feitas
-      let responseMessage = `✅ Evento "${eventToEdit.title}" foi atualizado com sucesso!\n\n`;
+      try {
+        const updatedEvent = await EventService.updateEvent(eventId, updateData);
+        console.log('Evento atualizado:', updatedEvent);
+        
+        // Verificar se a atualização foi bem-sucedida comparando campos
+        let updateSuccessful = false;
+        
+        if (updateData.title && updatedEvent.title === updateData.title) {
+          updateSuccessful = true;
+        }
+        
+        if (updateData.start) {
+          const updatedStartTime = new Date(updatedEvent.start).getTime();
+          const requestedStartTime = updateData.start.getTime();
+          // Compara com tolerância de 1 minuto para diferenças de fuso horário
+          if (Math.abs(updatedStartTime - requestedStartTime) < 60000) {
+            updateSuccessful = true;
+          }
+        }
+        
+        if (!updateSuccessful) {
+          console.error('Atualização falhou! Valores não corresponderam:', { 
+            solicitado: updateData, 
+            recebido: updatedEvent 
+          });
+          throw new Error('A atualização não foi aplicada corretamente');
+        }
       
-      if (updateData.title) {
-        responseMessage += `Novo título: ${updateData.title}\n`;
+        // Notificar calendário sobre a atualização
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('atualizarEventosCalendario'));
+        }
+        
+        // Criar mensagem de resposta com as alterações feitas
+        let responseMessage = `✅ Evento "${eventToEdit.title}" foi atualizado com sucesso!\n\n`;
+        
+        if (updateData.title) {
+          responseMessage += `Novo título: ${updateData.title}\n`;
+        }
+        
+        if (updateData.start) {
+          const formattedDate = updateData.start.toLocaleDateString('pt-BR');
+          const formattedTime = updateData.start.toLocaleTimeString('pt-BR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          });
+          responseMessage += `Nova data/hora: ${formattedDate} às ${formattedTime}\n`;
+        }
+        
+        if (updateData.description) {
+          responseMessage += `Nova descrição: ${updateData.description}\n`;
+        }
+        
+        responseMessage += '\nSua agenda foi atualizada.';
+        
+        addMessage(responseMessage, false);
+      } catch (error) {
+        console.error('Erro na atualização do evento:', error);
+        addMessage(
+          'Houve um problema ao atualizar o evento. A operação não foi concluída. Por favor, tente novamente.',
+          false
+        );
       }
-      
-      if (updateData.start) {
-        const formattedDate = updateData.start.toLocaleDateString('pt-BR');
-        const formattedTime = updateData.start.toLocaleTimeString('pt-BR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-        responseMessage += `Nova data/hora: ${formattedDate} às ${formattedTime}\n`;
-      }
-      
-      if (updateData.description) {
-        responseMessage += `Nova descrição: ${updateData.description}\n`;
-      }
-      
-      responseMessage += '\nSua agenda foi atualizada.';
-      
-      addMessage(responseMessage, false);
       
     } catch (error) {
       console.error('Erro ao editar evento:', error);
       addMessage(
         'Não foi possível editar o evento. Por favor, tente novamente usando o formato:\n\n' +
-        '"Editar evento [título] para [novas informações]"',
+        '"Editar evento [título] para [novas informações]"\n' +
+        'ou\n' +
+        '"Mudar título do evento [título] para [novo título]"',
         false
       );
     }
