@@ -1,239 +1,149 @@
-import nodemailer from 'nodemailer';
-import { format, subHours, isBefore, addDays } from 'date-fns';
+import { createTransport } from 'nodemailer';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import cron from 'node-cron';
+import { IEvent } from '../types';
 
-interface Event {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  type: string;
-  description?: string;
-}
+export default class NotificationService {
+  private events: IEvent[];
+  private readonly transporter;
+  private readonly notificationEmail: string;
+  private sentNotifications: Set<string>;
 
-class NotificationService {
-  private transporter: nodemailer.Transporter;
-  private events: Event[];
-  private emailQueue: Array<{
-    to: string;
-    subject: string;
-    text: string;
-    retries: number;
-  }> = [];
-  private isProcessingQueue = false;
-  private maxRetries = 3;
-
-  constructor(events: Event[]) {
-    this.events = events;
+  constructor(initialEvents: IEvent[] = []) {
+    this.events = initialEvents;
+    this.sentNotifications = new Set();
     
-    // Configuração do serviço de email com pool
-    this.transporter = nodemailer.createTransport({
+    // Configuração do transportador de email
+    this.transporter = createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_APP_PASSWORD
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: Infinity,
-      rateDelta: 1000,
-      rateLimit: 5
+      }
     });
 
-    // Inicia o agendador de verificações
-    this.startNotificationScheduler();
+    this.notificationEmail = process.env.NOTIFICATION_EMAIL || '';
   }
 
-  private async sendEmail(to: string, subject: string, text: string, retries = 0) {
-    console.log(`Adicionando email à fila: ${subject}`);
-    this.emailQueue.push({ to, subject, text, retries });
+  async updateEvents(newEvents: IEvent[]) {
+    // Apenas atualiza a lista de eventos sem enviar notificações
+    this.events = newEvents;
+  }
+
+  async handleNewEvent(event: IEvent) {
+    this.events.push(event);
+    await this.sendImmediateNotification(event);
+    await this.checkAndSendNotifications();
+  }
+
+  private generateEmailContent(events: IEvent[]) {
+    const formattedEvents = events.map(event => {
+      const formattedDate = format(event.start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+      return `
+        📅 Data: ${formattedDate}
+        📌 Título: ${event.title}
+        🎯 Tipo: ${event.type}
+        ${event.description ? `ℹ️ Descrição: ${event.description}` : ''}
+      `;
+    }).join('\n\n');
+
+    const subject = events.length === 1 
+      ? `Novo evento agendado: ${events[0].title}`
+      : 'Novos eventos agendados';
     
-    // Processa a fila imediatamente
-    await this.processEmailQueue();
+    const text = events.length === 1
+      ? `Um novo evento foi agendado:\n\n${formattedEvents}`
+      : `Novos eventos foram agendados:\n\n${formattedEvents}`;
+
+    return { subject, text };
   }
 
-  private async processEmailQueue() {
-    if (this.isProcessingQueue || this.emailQueue.length === 0) {
-      return;
+  public async sendImmediateNotification(event: IEvent) {
+    try {
+      const { subject, text } = this.generateEmailContent([event]);
+      await this.sendEmail(subject, text);
+      console.log('Notificação imediata enviada com sucesso para o evento:', event.title);
+    } catch (error) {
+      console.error('Erro ao enviar notificação imediata:', error);
     }
-
-    this.isProcessingQueue = true;
-    console.log(`Processando fila de emails (${this.emailQueue.length} emails na fila)`);
-
-    while (this.emailQueue.length > 0) {
-      const email = this.emailQueue[0];
-      
-      try {
-        console.log(`Tentando enviar email: ${email.subject}`);
-        await this.transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: email.to,
-          subject: email.subject,
-          text: email.text
-        });
-        
-        console.log(`✅ Email enviado com sucesso para ${email.to}`);
-        this.emailQueue.shift();
-      } catch (error) {
-        console.error('❌ Erro ao enviar email:', error);
-        
-        if (email.retries < this.maxRetries) {
-          console.log(`Tentativa ${email.retries + 1}/${this.maxRetries} - Movendo para o final da fila`);
-          this.emailQueue.shift();
-          this.emailQueue.push({
-            ...email,
-            retries: email.retries + 1
-          });
-        } else {
-          console.error(`❌ Falha ao enviar email após ${this.maxRetries} tentativas`);
-          this.emailQueue.shift();
-        }
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    console.log('Fila de emails processada');
-    this.isProcessingQueue = false;
-  }
-
-  private generateEmailContent(event: Event, timeUntilEvent: string): string {
-    return `
-Olá!
-
-${timeUntilEvent === 'agora' 
-  ? 'Um novo evento foi adicionado à sua agenda:'
-  : `Este é um lembrete para seu evento que acontecerá ${timeUntilEvent}:`}
-
-Evento: ${event.title}
-Data: ${format(event.start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-${event.description ? `Descrição: ${event.description}` : ''}
-
-Atenciosamente,
-SecretarIA
-    `.trim();
   }
 
   private async checkAndSendNotifications() {
-    const now = new Date();
-    const userEmail = process.env.NOTIFICATION_EMAIL;
-
     console.log('\n=== Verificação de Notificações ===');
-    console.log('Data/Hora atual:', format(now, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR }));
+    const now = new Date();
+    console.log('Data/Hora atual:', format(now, "dd/MM/yyyy 'às' HH:mm:ss"));
 
-    if (!userEmail) {
-      console.error('❌ Email do usuário não configurado para notificações');
-      return;
-    }
-
-    console.log(`\nVerificando ${this.events.length} eventos...`);
+    console.log(`\nVerificando ${this.events.length} eventos...\n`);
 
     for (const event of this.events) {
-      const eventStart = new Date(event.start);
-      
-      console.log(`\nAnalisando evento: "${event.title}"`);
-      console.log('Data do evento:', format(eventStart, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR }));
-      
-      if (isBefore(eventStart, now)) {
-        console.log('➡️ Evento já passou, pulando...');
+      console.log(`Analisando evento: "${event.title}"`);
+      console.log('Data do evento:', format(event.start, "dd/MM/yyyy 'às' HH:mm:ss"));
+
+      const timeUntilEvent = event.start.getTime() - now.getTime();
+      const hoursUntilEvent = timeUntilEvent / (1000 * 60 * 60);
+
+      if (timeUntilEvent < 0) {
+        console.log('➡️ Evento já passou, pulando...\n');
         continue;
       }
 
-      const oneHourBefore = subHours(eventStart, 1);
-      const timeDiffMinutes = Math.round((eventStart.getTime() - now.getTime()) / (1000 * 60));
-
-      console.log('Uma hora antes:', format(oneHourBefore, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR }));
-      console.log('Minutos até o evento:', timeDiffMinutes);
-
-      const shouldSendHourBefore = timeDiffMinutes <= 60 && timeDiffMinutes >= 58;
-
-      if (shouldSendHourBefore) {
-        console.log('📧 Enviando notificação de uma hora antes...');
-        await this.sendEmail(
-          userEmail,
-          `Lembrete: ${event.title} - Em 1 hora`,
-          this.generateEmailContent(event, 'em 1 hora')
-        );
-      } else {
-        console.log(`⏳ Ainda não é hora de enviar notificação (faltam ${timeDiffMinutes} minutos)`);
+      // Notifica 24 horas antes
+      if (hoursUntilEvent <= 24 && hoursUntilEvent > 23) {
+        await this.sendReminderEmail(event, '24 horas');
       }
-    }
-
-    console.log('\n✅ Verificação concluída!\n');
-  }
-
-  private startNotificationScheduler() {
-    console.log('🔄 Iniciando agendador de notificações...');
-    cron.schedule('* * * * *', () => {
-      this.checkAndSendNotifications();
-    });
-    console.log('✅ Agendador iniciado com sucesso!');
-  }
-
-  public async updateEvents(newEvents: Event[]) {
-    console.log('\n=== Atualizando eventos ===');
-    
-    // Encontra eventos novos comparando IDs
-    const newAddedEvents = newEvents.filter(newEvent => 
-      !this.events.some(existingEvent => existingEvent.id === newEvent.id)
-    );
-
-    // Atualiza a lista de eventos
-    this.events = newEvents;
-
-    // Envia notificação imediata para cada novo evento
-    const userEmail = process.env.NOTIFICATION_EMAIL;
-    if (userEmail && newAddedEvents.length > 0) {
-      console.log(`📧 Enviando notificações para ${newAddedEvents.length} novos eventos...`);
+      // Notifica 1 hora antes
+      else if (hoursUntilEvent <= 1 && hoursUntilEvent > 0) {
+        await this.sendReminderEmail(event, '1 hora');
+      }
+      // Notifica 30 minutos antes
+      else if (hoursUntilEvent <= 0.5 && hoursUntilEvent > 0) {
+        await this.sendReminderEmail(event, '30 minutos');
+      }
       
-      try {
-        for (const event of newAddedEvents) {
-          console.log(`\nPreparando notificação imediata para: ${event.title}`);
-          
-          // Envia o email diretamente, sem usar a fila
-          await this.transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: userEmail,
-            subject: `Novo Evento: ${event.title}`,
-            text: this.generateEmailContent(event, 'agora')
-          });
-          
-          console.log(`✅ Notificação imediata enviada com sucesso para: ${event.title}`);
-        }
-      } catch (error) {
-        console.error('❌ Erro ao enviar notificação imediata:', error);
-      }
-    } else {
-      console.log('Nenhum novo evento para notificar');
+      console.log('');
     }
 
-    console.log('✅ Atualização de eventos concluída\n');
+    console.log('✅ Verificação concluída!\n');
   }
 
-  // Método público para enviar notificação imediata
-  public async sendImmediateNotification(event: Event) {
-    console.log(`\n📧 Enviando notificação imediata para: ${event.title}`);
-    const userEmail = process.env.NOTIFICATION_EMAIL;
-    
-    if (!userEmail) {
-      console.error('❌ Email do usuário não configurado para notificações');
+  private async sendReminderEmail(event: IEvent, timeFrame: string) {
+    const notificationKey = `${event.id}-${timeFrame}`;
+    if (this.sentNotifications.has(notificationKey)) {
+      return;
+    }
+
+    const formattedDate = format(event.start, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    const subject = `Lembrete: ${event.title} em ${timeFrame}`;
+    const text = `
+      Lembrete de evento:
+      
+      ⏰ Acontecerá em: ${timeFrame}
+      📅 Data: ${formattedDate}
+      📌 Título: ${event.title}
+      🎯 Tipo: ${event.type}
+      ${event.description ? `ℹ️ Descrição: ${event.description}` : ''}
+    `;
+
+    await this.sendEmail(subject, text);
+    this.sentNotifications.add(notificationKey);
+  }
+
+  private async sendEmail(subject: string, text: string) {
+    if (!this.notificationEmail) {
+      console.error('Email de notificação não configurado');
       return;
     }
 
     try {
       await this.transporter.sendMail({
         from: process.env.EMAIL_USER,
-        to: userEmail,
-        subject: `Novo Evento: ${event.title}`,
-        text: this.generateEmailContent(event, 'agora')
+        to: this.notificationEmail,
+        subject,
+        text: text.trim()
       });
-      console.log('✅ Notificação imediata enviada com sucesso');
+      console.log('✉️ Email enviado com sucesso!');
     } catch (error) {
-      console.error('❌ Erro ao enviar notificação imediata:', error);
-      throw error; // Propaga o erro para tratamento adequado
+      console.error('Erro ao enviar email:', error);
     }
   }
-}
-
-export default NotificationService; 
+} 

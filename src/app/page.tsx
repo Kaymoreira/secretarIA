@@ -1,8 +1,12 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Box, Container, Flex } from '@chakra-ui/react';
+import { Box, Container, Flex, VStack } from '@chakra-ui/react';
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import Header from './components/Header';
 
 const Calendar = dynamic(() => import('./components/Calendar'), {
   ssr: false,
@@ -21,10 +25,31 @@ const PasswordManager = dynamic(() => import('./components/PasswordManager'), {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('calendar');
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  if (status === 'loading') {
+    return (
+      <Box minH="100vh" bg="gray.50" display="flex" alignItems="center" justifyContent="center">
+        Carregando...
+      </Box>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
 
   return (
-    <Box minH="100vh" bg="gray.50">
-      <Container maxW="container.xl" py={4}>
+    <VStack minH="100vh" bg="gray.50" spacing={0}>
+      <Header />
+      <Container maxW="container.xl" py={4} flex="1">
         <Box 
           bg="white" 
           borderRadius="lg" 
@@ -77,13 +102,13 @@ export default function Home() {
             </Box>
           </Flex>
 
-          <Box p={6} minH="calc(100vh - 120px)">
+          <Box p={6} minH="calc(100vh - 180px)">
             {activeTab === 'calendar' && <Calendar />}
             {activeTab === 'chat' && <Chat />}
             {activeTab === 'passwords' && <PasswordManager />}
           </Box>
         </Box>
       </Container>
-    </Box>
+    </VStack>
   );
 } 

@@ -69,6 +69,18 @@ export default function PasswordManager() {
 
   useEffect(() => {
     fetchCredentials();
+
+    // Adiciona o event listener para atualizar as credenciais
+    const handleCredentialsUpdate = () => {
+      fetchCredentials();
+    };
+
+    window.addEventListener('credentialsUpdated', handleCredentialsUpdate);
+
+    // Cleanup do event listener
+    return () => {
+      window.removeEventListener('credentialsUpdated', handleCredentialsUpdate);
+    };
   }, []);
 
   const fetchCredentials = async () => {
@@ -92,6 +104,7 @@ export default function PasswordManager() {
         body: JSON.stringify(newCredential),
       });
       const data = await response.json();
+      
       if (data.success) {
         toast({
           title: 'Credencial salva com sucesso!',
@@ -102,6 +115,15 @@ export default function PasswordManager() {
         fetchCredentials();
         onClose();
         setNewCredential({ title: '', login: '', password: '' });
+      } else {
+        toast({
+          title: 'Erro ao salvar credencial',
+          description: data.error || 'Por favor, tente novamente.',
+          status: 'error',
+          duration: 4000,
+          position: 'top-right',
+          isClosable: true,
+        });
       }
     } catch (error) {
       console.error('Error saving credential:', error);
@@ -130,6 +152,7 @@ export default function PasswordManager() {
         body: JSON.stringify(editingCredential),
       });
       const data = await response.json();
+      
       if (data.success) {
         toast({
           title: 'Credencial atualizada com sucesso!',
@@ -140,6 +163,15 @@ export default function PasswordManager() {
         fetchCredentials();
         onEditClose();
         setEditingCredential(null);
+      } else {
+        toast({
+          title: 'Erro ao atualizar credencial',
+          description: data.error || 'Por favor, tente novamente.',
+          status: 'error',
+          duration: 4000,
+          position: 'top-right',
+          isClosable: true,
+        });
       }
     } catch (error) {
       console.error('Error updating credential:', error);
@@ -161,16 +193,32 @@ export default function PasswordManager() {
         method: 'DELETE',
       });
       const data = await response.json();
+      
       if (data.success) {
+        // Remove a credencial da lista local
+        setCredentials(prev => prev.filter(cred => cred._id !== deletingCredential._id));
+        
         toast({
           title: 'Credencial excluída com sucesso!',
           status: 'success',
           duration: 3000,
           position: 'top-right',
         });
-        fetchCredentials();
+        
+        // Fecha o diálogo de confirmação
         onDeleteClose();
         setDeletingCredential(null);
+        
+        // Dispara o evento de atualização
+        window.dispatchEvent(new Event('credentialsUpdated'));
+      } else {
+        toast({
+          title: 'Erro ao excluir credencial',
+          description: data.error || 'Por favor, tente novamente.',
+          status: 'error',
+          duration: 3000,
+          position: 'top-right',
+        });
       }
     } catch (error) {
       console.error('Error deleting credential:', error);
