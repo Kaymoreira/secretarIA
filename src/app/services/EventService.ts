@@ -3,6 +3,7 @@ import { ptBR } from 'date-fns/locale';
 
 export interface Event {
   id: string;
+  _id?: string;  // Campo opcional para o ID do MongoDB
   title: string;
   start: Date;
   end: Date;
@@ -95,7 +96,7 @@ export class EventService {
   static async updateEvent(id: string, eventData: Partial<Event>): Promise<Event> {
     try {
       console.log('[EVENT_SERVICE] Atualizando evento:', id, eventData);
-      const response = await fetch('/api/events', {
+      const response = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
