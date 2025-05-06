@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale';
 
 interface Event {
   id: string;
+  _id?: string;  // Campo opcional para o ID do MongoDB
   title: string;
   start: Date;
   end: Date;
@@ -30,13 +31,26 @@ const EventModal: React.FC<EventModalProps> = ({ event, isOpen, onClose, onSave 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/events', {
+      const eventId = editedEvent.id || editedEvent._id || '';
+      
+      // Log dos dados que serão enviados
+      console.log('Dados a serem enviados para atualização:', {
+        id: eventId,
+        title: editedEvent.title,
+        start: new Date(editedEvent.start),
+        end: new Date(editedEvent.end),
+        type: editedEvent.type,
+        description: editedEvent.description
+      });
+      
+      const response = await fetch(`/api/events?id=${encodeURIComponent(eventId)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           ...editedEvent,
+          _id: eventId,
           start: new Date(editedEvent.start),
           end: new Date(editedEvent.end)
         }),
@@ -48,8 +62,25 @@ const EventModal: React.FC<EventModalProps> = ({ event, isOpen, onClose, onSave 
       }
 
       const updatedEvent = await response.json();
-      onSave(updatedEvent);
+      console.log('Resposta do servidor após atualização:', updatedEvent);
+      
+      // Garantir que os dados estejam em formato Date
+      const processedEvent = {
+        ...updatedEvent,
+        id: updatedEvent.id || updatedEvent._id,
+        start: new Date(updatedEvent.start),
+        end: new Date(updatedEvent.end)
+      };
+      
+      // Notificar o componente pai
+      onSave(processedEvent);
       onClose();
+      
+      // Forçar atualização do calendário
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('atualizarEventosCalendario'));
+      }
+      
     } catch (error) {
       console.error('Erro ao salvar evento:', error);
       alert('Erro ao salvar as alterações. Por favor, tente novamente.');

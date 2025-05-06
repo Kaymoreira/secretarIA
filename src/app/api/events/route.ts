@@ -93,34 +93,35 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
     
-    const body = await request.json();
-    console.log('[API][EVENTS][PUT] Usuário:', session.user.id, 'Body:', body);
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
     
-    await connectToDatabase();
-    
-    // Use o id enviado pelo cliente, já que o frontend usa id e não _id
-    const eventId = body.id || body._id;
-    
-    if (!eventId) {
+    if (!id) {
+      console.log('[API][EVENTS][PUT] ID do evento não fornecido via URL');
       return NextResponse.json(
         { error: 'ID do evento não fornecido' },
         { status: 400 }
       );
     }
     
-    // Remova id e _id do objeto de atualização para evitar conflitos
-    const { id, _id, ...updateData } = body;
+    const body = await request.json();
+    console.log('[API][EVENTS][PUT] Usuário:', session.user.id, 'ID:', id, 'Body:', body);
     
-    console.log('[API][EVENTS][PUT] Atualizando evento:', eventId, 'com dados:', updateData);
+    await connectToDatabase();
+    
+    // Remova id e _id do objeto de atualização para evitar conflitos
+    const { id: bodyId, _id, ...updateData } = body;
+    
+    console.log('[API][EVENTS][PUT] Atualizando evento:', id, 'com dados:', updateData);
     
     const event = await Event.findOneAndUpdate(
-      { _id: eventId, userId: session.user.id },
+      { _id: id, userId: session.user.id },
       updateData,
       { new: true }
     );
     
     if (!event) {
-      console.log('[API][EVENTS][PUT] Evento não encontrado:', eventId);
+      console.log('[API][EVENTS][PUT] Evento não encontrado:', id);
       return NextResponse.json(
         { error: 'Evento não encontrado' },
         { status: 404 }

@@ -201,17 +201,18 @@ const Calendar: React.FC = () => {
 
   const handleEventSave = async (updatedEvent: Event) => {
     try {
+      const eventId = updatedEvent._id || updatedEvent.id;
       const eventToUpdate = {
         ...updatedEvent,
         // Garantindo que o _id seja preservado para o MongoDB
-        _id: updatedEvent._id || updatedEvent.id,
+        _id: eventId,
         start: new Date(updatedEvent.start),
         end: new Date(updatedEvent.end)
       };
 
       console.log('Atualizando evento:', eventToUpdate);
 
-      const response = await fetch('/api/events', {
+      const response = await fetch(`/api/events?id=${encodeURIComponent(eventId)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -226,19 +227,33 @@ const Calendar: React.FC = () => {
         // Garantindo que o evento tenha um campo id
         const eventWithId = {
           ...savedEvent,
-          id: savedEvent.id || savedEvent._id
+          id: savedEvent.id || savedEvent._id,
+          start: new Date(savedEvent.start),
+          end: new Date(savedEvent.end)
         };
         
-        // Atualiza o evento na lista local
-        setEvents(events.map(e => e.id === eventWithId.id ? eventWithId : e));
+        // Atualiza o evento na lista local usando comparação mais robusta
+        // A função usa _id ou id para garantir que o evento seja encontrado
+        setEvents(events.map(e => 
+          (e.id === eventWithId.id || 
+           e.id === eventWithId._id || 
+           e._id === eventWithId._id || 
+           e._id === eventWithId.id) ? eventWithId : e
+        ));
+
+        // Forçar a atualização da interface buscando eventos novamente
+        fetchEvents();
+        
         setIsModalOpen(false);
         setSelectedEvent(null);
       } else {
         const error = await response.json();
         console.error('Erro ao atualizar evento:', error);
+        alert('Erro ao atualizar evento. Por favor, tente novamente.');
       }
     } catch (error) {
       console.error('Erro ao atualizar evento:', error);
+      alert('Erro ao atualizar evento. Por favor, tente novamente.');
     }
   };
 
