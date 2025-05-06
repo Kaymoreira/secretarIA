@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 interface Message {
   id: string;
@@ -14,28 +13,21 @@ interface ChatStore {
   clearMessages: () => void;
 }
 
-const useChatStore = create<ChatStore>()(
-  persist(
-    (set) => ({
-      messages: [],
-      addMessage: (text: string, isUser: boolean) => 
-        set((state) => ({
-          messages: [
-            ...state.messages,
-            {
-              id: Date.now().toString(),
-              text,
-              isUser,
-              timestamp: new Date(),
-            },
-          ],
-        })),
-      clearMessages: () => set({ messages: [] }),
-    }),
-    {
-      name: 'chat-storage',
-    }
-  )
-);
+const useChatStore = create<ChatStore>((set) => ({
+  messages: [],
+  addMessage: (text: string, isUser: boolean) => 
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        {
+          id: Date.now().toString(),
+          text,
+          isUser,
+          timestamp: new Date(),
+        },
+      ],
+    })),
+  clearMessages: () => set({ messages: [] }),
+}));
 
 export default useChatStore; 

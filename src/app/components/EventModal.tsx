@@ -30,15 +30,22 @@ const EventModal: React.FC<EventModalProps> = ({ event, isOpen, onClose, onSave 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(`http://localhost:3001/api/events/${event.id}`, {
+      const response = await fetch('/api/events', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editedEvent),
+        body: JSON.stringify({
+          ...editedEvent,
+          start: new Date(editedEvent.start),
+          end: new Date(editedEvent.end)
+        }),
       });
 
-      if (!response.ok) throw new Error('Erro ao atualizar evento');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erro ao atualizar evento');
+      }
 
       const updatedEvent = await response.json();
       onSave(updatedEvent);

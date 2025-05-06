@@ -24,6 +24,7 @@ import Logo from './Logo';
 
 interface Event {
   id: string;
+  _id?: string;  // Campo opcional para o ID do MongoDB
   title: string;
   start: Date;
   end: Date;
@@ -48,6 +49,14 @@ const getEventColor = (type: string) => {
   }
 };
 
+// Adicione uma função global para atualizar eventos
+export function atualizarEventosCalendario() {
+  // Esta função pode ser chamada pelo chat (via window.dispatchEvent, por exemplo)
+  // para forçar o calendário a buscar os eventos mais recentes
+  const evento = new CustomEvent('atualizarEventosCalendario');
+  window.dispatchEvent(evento);
+}
+
 const Calendar: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<Event[]>([]);
@@ -59,7 +68,7 @@ const Calendar: React.FC = () => {
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
   const [newEvent, setNewEvent] = useState<Partial<Event>>({
     title: '',
-    type: 'Meeting',
+    type: 'Evento',
     start: new Date(),
     end: new Date()
   });
@@ -82,20 +91,70 @@ const Calendar: React.FC = () => {
   // Busca eventos do backend
   useEffect(() => {
     fetchEvents();
+  }, [currentDate]);
+
+  // Adiciona um listener para atualizar eventos quando o chat disparar
+  useEffect(() => {
+    function handleAtualizarEventos() {
+      fetchEvents();
+    }
+    window.addEventListener('atualizarEventosCalendario', handleAtualizarEventos);
+    return () => {
+      window.removeEventListener('atualizarEventosCalendario', handleAtualizarEventos);
+    };
   }, []);
 
   const fetchEvents = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/events');
+      const response = await fetch('/api/events');
       if (response.ok) {
         const data = await response.json();
-        // Convertendo as strings de data para objetos Date
-        const parsedEvents = data.map((event: any) => ({
-          ...event,
-          start: new Date(event.start),
-          end: new Date(event.end)
-        }));
-        setEvents(parsedEvents);
+        console.log('Eventos recebidos da API:', data);
+        
+        if (!Array.isArray(data)) {
+          console.error('Dados recebidos não são um array:', data);
+          return;
+        }
+        
+        // Garantindo que cada evento tenha um campo id válido e datas corretamente formatadas
+        const parsedEvents = data.map((event: any) => {
+          // Converte as strings de data para objetos Date
+          const startDate = new Date(event.start);
+          const endDate = new Date(event.end);
+          
+          return {
+            ...event,
+            // Se o evento não tiver um campo id, usa o _id como id
+            id: event.id || event._id,
+            start: startDate,
+            end: endDate
+          };
+        });
+        
+        console.log('Eventos processados:', parsedEvents);
+        
+        // Define o ano como 2025 para eventos sem ano
+        const eventsWithCorrectYear = parsedEvents.map((event: any) => {
+          const start = new Date(event.start);
+          const end = new Date(event.end);
+          
+          // Se o ano for 2001 (padrão em alguns casos), ajusta para 2025
+          if (start.getFullYear() < 2022) {
+            start.setFullYear(2025);
+          }
+          
+          if (end.getFullYear() < 2022) {
+            end.setFullYear(2025);
+          }
+          
+          return {
+            ...event,
+            start,
+            end
+          };
+        });
+        
+        setEvents(eventsWithCorrectYear);
       }
     } catch (error) {
       console.error('Erro ao buscar eventos:', error);
@@ -141,9 +200,46 @@ const Calendar: React.FC = () => {
   };
 
   const handleEventSave = async (updatedEvent: Event) => {
-    await fetchEvents(); // Recarrega os eventos após salvar
-    setIsModalOpen(false);
-    setSelectedEvent(null);
+    try {
+      const eventToUpdate = {
+        ...updatedEvent,
+        // Garantindo que o _id seja preservado para o MongoDB
+        _id: updatedEvent._id || updatedEvent.id,
+        start: new Date(updatedEvent.start),
+        end: new Date(updatedEvent.end)
+      };
+
+      console.log('Atualizando evento:', eventToUpdate);
+
+      const response = await fetch('/api/events', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(eventToUpdate),
+      });
+
+      if (response.ok) {
+        const savedEvent = await response.json();
+        console.log('Evento atualizado:', savedEvent);
+        
+        // Garantindo que o evento tenha um campo id
+        const eventWithId = {
+          ...savedEvent,
+          id: savedEvent.id || savedEvent._id
+        };
+        
+        // Atualiza o evento na lista local
+        setEvents(events.map(e => e.id === eventWithId.id ? eventWithId : e));
+        setIsModalOpen(false);
+        setSelectedEvent(null);
+      } else {
+        const error = await response.json();
+        console.error('Erro ao atualizar evento:', error);
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar evento:', error);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -165,14 +261,15 @@ const Calendar: React.FC = () => {
     e.preventDefault();
     
     try {
-      // Gera um ID único para o evento
+      // Não precisamos mais gerar um ID, pois o MongoDB irá gerar um
       const event = {
         ...newEvent,
-        id: Date.now().toString()
+        start: new Date(newEvent.start || new Date()),
+        end: new Date(newEvent.end || new Date())
       } as Event;
 
       // Envia o evento para o backend
-      const response = await fetch('http://localhost:3001/api/events', {
+      const response = await fetch('/api/events', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -181,15 +278,27 @@ const Calendar: React.FC = () => {
       });
 
       if (response.ok) {
+        const createdEvent = await response.json();
+        console.log('Evento criado:', createdEvent);
+        
         // Adiciona o evento à lista e fecha o modal
-        setEvents([...events, event]);
+        // Garantindo que o evento tenha um campo id
+        const eventWithId = {
+          ...createdEvent,
+          id: createdEvent.id || createdEvent._id
+        };
+        
+        setEvents([...events, eventWithId]);
         setShowEventModal(false);
         setNewEvent({
           title: '',
-          type: 'Meeting',
+          type: 'Evento',
           start: new Date(),
           end: new Date()
         });
+      } else {
+        const error = await response.json();
+        console.error('Erro ao criar evento:', error);
       }
     } catch (error) {
       console.error('Erro ao criar evento:', error);
@@ -203,11 +312,16 @@ const Calendar: React.FC = () => {
 
   const handleDeleteEvent = async (event: Event) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/events/${event.id}`, {
+      // Usar _id se disponível, senão usar id
+      const eventId = event._id || event.id;
+      console.log('Deletando evento com ID:', eventId);
+      
+      const response = await fetch(`/api/events?id=${encodeURIComponent(eventId)}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
+        console.log('Evento excluído com sucesso');
         // Remove o evento da lista local
         setEvents(events.filter(e => e.id !== event.id));
         // Fecha o modal de detalhes
@@ -215,6 +329,9 @@ const Calendar: React.FC = () => {
         // Fecha o modal de confirmação
         setShowDeleteConfirm(false);
         setEventToDelete(null);
+      } else {
+        const error = await response.json();
+        console.error('Erro ao excluir evento:', error);
       }
     } catch (error) {
       console.error('Erro ao excluir evento:', error);
@@ -265,15 +382,34 @@ const Calendar: React.FC = () => {
 
   // Renderiza a visão de agenda
   const renderAgendaView = () => {
-    const today = new Date();
-    const futureEvents = events
-      .filter(event => event.start >= today)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+    const now = new Date();
+    console.log('Data atual para comparação:', now);
+    
+    // Verifica todos os eventos disponíveis
+    console.log('Todos os eventos disponíveis:', events);
+    
+    // Tenta filtrar eventos futuros
+    let futureEvents = events
+      .filter(event => {
+        // Garante que estamos comparando objetos Date
+        const eventEndDate = new Date(event.end);
+        console.log(`Evento: ${event.title}, Data fim: ${eventEndDate}, É futuro: ${eventEndDate >= now}`);
+        return eventEndDate >= now;
+      })
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    
+    // Se não houver eventos futuros, exibe todos os eventos
+    if (futureEvents.length === 0 && events.length > 0) {
+      console.log('Nenhum evento futuro encontrado. Mostrando todos os eventos.');
+      futureEvents = [...events].sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+    }
+    
+    console.log('Eventos filtrados para exibição:', futureEvents);
 
     return (
       <div className="space-y-4">
         {futureEvents.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">Nenhum evento futuro encontrado.</p>
+          <p className="text-gray-500 text-center py-4">Nenhum evento encontrado.</p>
         ) : (
           futureEvents.map(event => (
             <div
@@ -285,8 +421,8 @@ const Calendar: React.FC = () => {
                 <div>
                   <h3 className="font-semibold">{event.title}</h3>
                   <p className="text-sm">
-                    {format(event.start, "dd/MM/yyyy' • 'HH:mm", { locale: ptBR })} - 
-                    {format(event.end, "HH:mm", { locale: ptBR })}
+                    {format(new Date(event.start), "dd/MM/yyyy' • 'HH:mm", { locale: ptBR })} - 
+                    {format(new Date(event.end), "HH:mm", { locale: ptBR })}
                   </p>
                   {event.description && (
                     <p className="text-sm mt-1">{event.description}</p>
@@ -530,10 +666,9 @@ const Calendar: React.FC = () => {
                   onChange={handleInputChange}
                   className="w-full border rounded-lg p-2"
                 >
-                  <option value="reunião">Reunião</option>
-                  <option value="treinamento">Treinamento</option>
-                  <option value="evento">Evento</option>
-                  <option value="tarefa">Tarefa</option>
+                  <option value="Reunião">Reunião</option>
+                  <option value="Treinamento">Treinamento</option>
+                  <option value="Evento">Evento</option>
                 </select>
               </div>
               
