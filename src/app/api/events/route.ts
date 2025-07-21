@@ -51,9 +51,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    console.log('[API][EVENTS][POST] Iniciando...');
-    const session = await getServerSession(authOptions);
+    console.log('\n=== API EVENTS POST - INICIANDO ===');
     
+    // Verificar autenticação - Otimizado para responder mais rápido
+    const sessionPromise = getServerSession(authOptions);
+    const dbConnectionPromise = connectToDatabase();
+    
+    // Extrair dados da requisição em paralelo com outras operações
+    const body = await request.json();
+    console.log('[API][EVENTS][POST] Dados recebidos:', body);
+    
+    // Aguardar autenticação
+    const session = await sessionPromise;
     if (!session?.user?.id) {
       console.log('[API][EVENTS][POST] Usuário não autenticado');
       return NextResponse.json(
@@ -62,21 +71,53 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
-    console.log('[API][EVENTS][POST] Usuário:', session.user.id, 'Body:', body);
+    // Aguardar conexão com o banco de dados
+    await dbConnectionPromise;
     
     // Remova o campo id para evitar conflitos com o índice único
     const { id, ...eventDataWithoutId } = body;
     
-    await connectToDatabase();
-    const event = await Event.create({ ...eventDataWithoutId, userId: session.user.id });
-    console.log('[API][EVENTS][POST] Evento criado:', event);
+    // Adicionar userId ao evento
+    const eventWithUserId = {
+      ...eventDataWithoutId,
+      userId: session.user.id,
+    };
     
-    await updateNotificationService(session.user.id);
+    // Criar o evento
+    const createdEvent = await Event.create(eventWithUserId);
+    console.log('[API][EVENTS][POST] Evento criado:', createdEvent);
     
-    return NextResponse.json(event, {
-      headers: { 'Content-Type': 'application/json' }
+    // Adicionar informações do usuário ao evento para notificações
+    const eventWithUserInfo = {
+      ...createdEvent.toObject(),
+      userEmail: body.userEmail || session.user.email,
+    };
+    
+    // Logs para depuração
+    console.log('Evento completo com informações do usuário:', {
+      id: eventWithUserInfo._id,
+      title: eventWithUserInfo.title,
+      userEmail: eventWithUserInfo.userEmail,
+      userId: eventWithUserInfo.userId,
+      start: eventWithUserInfo.start,
+      type: eventWithUserInfo.type
     });
+    
+    // Enviar notificações em segundo plano para não bloquear a resposta
+    setTimeout(async () => {
+      try {
+        const notificationService = new NotificationService([]);
+        await notificationService.handleNewEvent(eventWithUserInfo);
+        console.log('[API][EVENTS][POST] Notificações enviadas com sucesso');
+      } catch (error) {
+        console.error('[API][EVENTS][POST] Erro ao enviar notificações:', error);
+      }
+    }, 0);
+    
+    console.log('=== API EVENTS POST - CONCLUÍDO ===\n');
+    
+    // Responder imediatamente com o evento criado
+    return NextResponse.json(createdEvent, { headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('[API][EVENTS][POST][ERRO]', error);
     return NextResponse.json(

@@ -8,7 +8,7 @@ import { authOptions } from '@/lib/auth';
 import { Event } from '@/server/models/Event';
 import { Chat } from '@/server/models/Chat';
 import { connectToDatabase } from '@/lib/mongoose';
-import { processCommand } from '@/utils/chatCommands';
+import { processCommand } from '@/utils/chatProcessor';
 import NotificationService from '@/server/services/NotificationService';
 
 // Configuração do modelo de chat
@@ -20,9 +20,21 @@ const chat = new ChatOpenAI({
 // Inicializa o serviço de notificações
 const notificationService = new NotificationService([]);
 
-// Definição do SystemMessage Base
-const baseSystemPrompt = `Você é uma secretária virtual inteligente chamada SecretarIA que ajuda a gerenciar a agenda, senhas e responder perguntas.
-[... resto do prompt do sistema ...]`;
+// Definição do SystemMessage Base com data atual dinâmica
+const getSystemPrompt = () => {
+  const now = new Date();
+  const formattedDate = format(now, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+  const formattedTime = format(now, "HH:mm", { locale: ptBR });
+  
+  return `Você é uma secretária virtual inteligente chamada SecretarIA que ajuda a gerenciar a agenda, senhas e responder perguntas.
+  
+  Informações importantes:
+  - A data atual é: ${formattedDate}
+  - A hora atual é: ${formattedTime}
+  
+  Quando o usuário perguntar sobre a data ou hora atual, sempre use as informações acima e nunca invente datas ou horários.
+  Seja sempre educada, prestativa e responda de forma natural e conversacional.`;
+};
 
 // Função para ajustar o fuso horário
 const adjustTimeZone = (date: Date): Date => {
@@ -36,22 +48,25 @@ async function getEvents(userId: string): Promise<any[]> {
 }
 
 // Função para salvar mensagem no histórico
-async function saveMessage(userId: string, text: string, isUser: boolean) {
-  await connectToDatabase();
-  const chatDoc = await Chat.findOneAndUpdate(
-    { userId },
-    { 
-      $push: { 
-        messages: { 
-          text, 
-          isUser, 
-          timestamp: new Date() 
-        } 
-      } 
-    },
-    { upsert: true, new: true }
-  );
-  return chatDoc;
+async function saveMessage(userId: string, content: string, isUser: boolean) {
+  try {
+    await connectToDatabase();
+    await Chat.updateOne(
+      { userId },
+      {
+        $push: {
+          messages: {
+            text: content,
+            isUser,
+            timestamp: new Date()
+          }
+        }
+      },
+      { upsert: true }
+    );
+  } catch (error) {
+    console.error('Erro ao salvar mensagem:', error);
+  }
 }
 
 // Função para obter histórico de mensagens
@@ -94,40 +109,31 @@ export async function POST(request: NextRequest) {
     // Salva a mensagem do usuário
     await saveMessage(session.user.id, message, true);
 
-    // Verifica se é um comando de senha
-    const commandResult = await processCommand(message, session.user.id);
-    if (commandResult.success) {
+    // Verifica se é uma pergunta sobre data ou hora atual
+    const dateTimeRegex = /(que dia (é|eh|e) hoje|qual (é|eh|e) a data (atual|de hoje)|que horas s(ã|a)o|qual (é|eh|e) o hor(á|a)rio)/i;
+    
+    if (dateTimeRegex.test(message)) {
+      // Se for uma pergunta sobre data/hora, usa o prompt dinâmico
+      const systemPrompt = getSystemPrompt();
+      const response = await chat.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(message)
+      ]);
+      
+      // Salva a resposta
+      const responseText = response.content.toString();
+      await saveMessage(session.user.id, responseText, false);
+      
+      return NextResponse.json({ response: responseText });
+    } else {
+      // Para outros comandos, usa o processador normal
+      const commandResult = await processCommand(message, session.user.id);
+      
       // Salva a resposta do comando
       await saveMessage(session.user.id, commandResult.message, false);
+      
       return NextResponse.json({ response: commandResult.message });
     }
-
-    // Obtém eventos atuais para contexto
-    const events = await getEvents(session.user.id);
-    
-    // Atualiza o serviço de notificações
-    await notificationService.updateEvents(events);
-
-    // Prepara o contexto atual
-    const currentDate = new Date();
-    const dateStr = format(currentDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR });
-    
-    const systemMessage = new SystemMessage(baseSystemPrompt);
-    const userMessage = new HumanMessage(`
-Contexto atual:
-Data: ${dateStr}
-Número de eventos futuros: ${events.filter(e => new Date(e.end) >= currentDate).length}
-
-Mensagem do usuário:
-${message}
-    `);
-
-    const response = await chat.invoke([systemMessage, userMessage]);
-    
-    // Salva a resposta da IA
-    await saveMessage(session.user.id, response.content as string, false);
-
-    return NextResponse.json({ response: response.content });
   } catch (error) {
     console.error('Erro no processamento do chat:', error);
     return NextResponse.json(

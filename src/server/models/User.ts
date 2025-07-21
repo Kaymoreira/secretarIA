@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { encrypt } from '@/utils/encryption';
+import { hashPassword } from '@/utils/encryption';
 
 export interface IUser {
   _id?: string;
@@ -24,8 +24,7 @@ const userSchema = new mongoose.Schema<IUser>({
   },
   password: { 
     type: String, 
-    required: true,
-    set: (password: string) => encrypt(password) // Criptografa a senha antes de salvar
+    required: true
   },
   name: { type: String, required: true },
 }, {

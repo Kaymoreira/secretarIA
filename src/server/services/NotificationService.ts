@@ -31,9 +31,46 @@ export default class NotificationService {
   }
 
   async handleNewEvent(event: IEvent) {
+    console.log('\n=== HANDLE NEW EVENT CHAMADO ===');
+    
+    // Extrair e verificar o email do usuário
+    const userEmail = (event as any).userEmail;
+    
+    console.log('Evento recebido:', {
+      id: event.id,
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      type: event.type,
+      userEmail: userEmail || 'NÃO FORNECIDO'
+    });
+    
+    if (!userEmail) {
+      console.error('ALERTA: Email do usuário não fornecido no evento! O email de notificação padrão será usado.');
+    } else {
+      console.log('Email do usuário encontrado:', userEmail);
+    }
+    
+    // Adiciona o evento à lista de eventos
     this.events.push(event);
-    await this.sendImmediateNotification(event);
+    console.log('Evento adicionado à lista de eventos');
+    
+    // Envia notificação imediata
+    console.log('Enviando notificação imediata...');
+    const notificationSent = await this.sendImmediateNotification(event);
+    
+    if (notificationSent) {
+      console.log('Notificação imediata enviada com sucesso!');
+    } else {
+      console.error('Falha ao enviar notificação imediata!');
+    }
+    
+    // Verifica e agenda notificações futuras
+    console.log('Verificando e agendando notificações futuras...');
     await this.checkAndSendNotifications();
+    
+    console.log('=== FIM DO HANDLE NEW EVENT ===\n');
+    return notificationSent;
   }
 
   private generateEmailContent(events: IEvent[]) {
@@ -58,13 +95,25 @@ export default class NotificationService {
     return { subject, text };
   }
 
-  public async sendImmediateNotification(event: IEvent) {
+  public async sendImmediateNotification(event: IEvent): Promise<boolean> {
     try {
       const { subject, text } = this.generateEmailContent([event]);
-      await this.sendEmail(subject, text);
-      console.log('Notificação imediata enviada com sucesso para o evento:', event.title);
+      // Usar o email do usuário se disponível, caso contrário usar o email de notificação padrão
+      const userEmail = (event as any).userEmail || this.notificationEmail;
+      
+      console.log('Tentando enviar notificação para:', userEmail);
+      const emailSent = await this.sendEmail(subject, text, userEmail);
+      
+      if (emailSent) {
+        console.log('Notificação imediata enviada com sucesso para o evento:', event.title);
+        return true;
+      } else {
+        console.error('Falha ao enviar email de notificação para o evento:', event.title);
+        return false;
+      }
     } catch (error) {
       console.error('Erro ao enviar notificação imediata:', error);
+      return false;
     }
   }
 
@@ -120,30 +169,67 @@ export default class NotificationService {
       ⏰ Acontecerá em: ${timeFrame}
       📅 Data: ${formattedDate}
       📌 Título: ${event.title}
-      🎯 Tipo: ${event.type}
+      🏷️ Tipo: ${event.type}
       ${event.description ? `ℹ️ Descrição: ${event.description}` : ''}
     `;
 
-    await this.sendEmail(subject, text);
+    // Usar o email do usuário se disponível, caso contrário usar o email de notificação padrão
+    const userEmail = (event as any).userEmail || this.notificationEmail;
+    await this.sendEmail(subject, text, userEmail);
     this.sentNotifications.add(notificationKey);
   }
 
-  private async sendEmail(subject: string, text: string) {
-    if (!this.notificationEmail) {
-      console.error('Email de notificação não configurado');
+  private async sendEmail(subject: string, text: string, to: string) {
+    console.log('\n=== NOTIFICATION SERVICE - TENTANDO ENVIAR EMAIL ===');
+    
+    if (!to) {
+      console.error('ERRO CRÍTICO: Email de destinatário não fornecido!');
+      console.log('NOTIFICATION_EMAIL (fallback):', process.env.NOTIFICATION_EMAIL);
+      
+      // Usar o email de notificação como fallback se disponível
+      if (process.env.NOTIFICATION_EMAIL) {
+        to = process.env.NOTIFICATION_EMAIL;
+        console.log('Usando email de fallback:', to);
+      } else {
+        console.error('Nenhum email de fallback disponível. Abortando envio.');
+        return;
+      }
+    }
+
+    // Verificar se as credenciais de email estão configuradas
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+      console.error('ERRO CRÍTICO: Credenciais de email não configuradas!');
+      console.log('EMAIL_USER configurado:', !!process.env.EMAIL_USER);
+      console.log('EMAIL_APP_PASSWORD configurado:', !!process.env.EMAIL_APP_PASSWORD);
       return;
     }
 
+    console.log('Configurações do transportador:', {
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER ? process.env.EMAIL_USER.substring(0, 5) + '...' : 'não definido',
+        pass: process.env.EMAIL_APP_PASSWORD ? '******' : 'não definido'
+      }
+    });
+    console.log('Destinatário:', to);
+    console.log('Assunto:', subject);
+    console.log('Conteúdo (resumo):', text.substring(0, 50) + '...');
+
     try {
-      await this.transporter.sendMail({
+      const result = await this.transporter.sendMail({
         from: process.env.EMAIL_USER,
-        to: this.notificationEmail,
+        to: to,
         subject,
         text: text.trim()
       });
       console.log('✉️ Email enviado com sucesso!');
+      console.log('Resultado do envio:', result);
+      return true;
     } catch (error) {
-      console.error('Erro ao enviar email:', error);
+      console.error('ERRO AO ENVIAR EMAIL:', error);
+      return false;
+    } finally {
+      console.log('=== FIM DA TENTATIVA DE ENVIO ===\n');
     }
   }
 } 

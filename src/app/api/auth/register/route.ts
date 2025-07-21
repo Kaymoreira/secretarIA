@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongoose';
 import { User } from '@/server/models/User';
+import { hashPassword } from '@/utils/encryption';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,9 +27,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Cria o novo usuário
+    const hashedPassword = await hashPassword(password);
     const user = await User.create({
       email,
-      password,
+      password: hashedPassword,
       name
     });
 

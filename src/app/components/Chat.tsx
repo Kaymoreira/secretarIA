@@ -22,6 +22,7 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  Center,
 } from '@chakra-ui/react';
 import { ArrowUpIcon } from '@chakra-ui/icons';
 import { FaTrash } from 'react-icons/fa';
@@ -81,111 +82,35 @@ export default function Chat() {
 
   const handleSendMessage = async (text: string = inputMessage) => {
     if (!text.trim()) return;
-
-    addMessage(text, true);
-    setInputMessage('');
+    
     setIsProcessing(true);
-
+    setInputMessage('');
+    
     try {
-      // Lista de frases que indicam que o usuário quer ver eventos
-      const viewEventPhrases = [
-        'mostrar eventos', 'listar eventos', 'proximos eventos', 
-        'eventos futuros', 'compromissos', 'agenda'
-      ];
+      // Adiciona a mensagem do usuário ao chat
+      addMessage(text, true);
       
-      // Lista de frases que indicam que o usuário quer criar eventos
-      const createEventPhrases = [
-        'criar evento', 'agendar evento', 'adicionar evento', 
-        'marcar compromisso', 'novo evento', 'cadastrar evento'
-      ];
-      
-      // Lista de frases que indicam que o usuário quer deletar eventos
-      const deleteEventPhrases = [
-        'deletar evento', 'excluir evento', 'apagar evento', 
-        'remover evento', 'cancelar evento', 'cancelar compromisso'
-      ];
-      
-      // Lista de frases que indicam que o usuário quer editar eventos
-      const editEventPhrases = [
-        'editar evento', 'alterar evento', 'modificar evento', 
-        'atualizar evento', 'mudar evento', 'ajustar evento',
-        'mudar título', 'alterar título', 'editar título',
-        'mudar data', 'alterar data', 'editar data',
-        'mudar hora', 'alterar hora', 'editar hora',
-        'mudar horário', 'alterar horário', 'editar horário',
-        'mudar descrição', 'alterar descrição', 'editar descrição'
-      ];
-      
-      // Verificar se é uma consulta de visualização de eventos
-      const isViewEventQuery = viewEventPhrases.some(phrase => 
-        text.toLowerCase().includes(phrase.toLowerCase())
-      );
-      
-      // Verificar se é um comando para criar evento
-      const isCreateEventQuery = createEventPhrases.some(phrase => 
-        text.toLowerCase().includes(phrase.toLowerCase())
-      );
-      
-      // Verificar se é um comando para deletar evento
-      const isDeleteEventQuery = deleteEventPhrases.some(phrase => 
-        text.toLowerCase().includes(phrase.toLowerCase())
-      );
-      
-      // Verificar se é um comando para editar evento
-      const isEditEventQuery = editEventPhrases.some(phrase => 
-        text.toLowerCase().includes(phrase.toLowerCase())
-      );
-      
-      if (isViewEventQuery && !isCreateEventQuery && !isDeleteEventQuery && !isEditEventQuery) {
-        // Processamento para visualização de eventos (já implementado)
-        console.log('Solicitação de eventos detectada:', text);
-        const events = await EventService.getWeekEvents();
-        console.log('Eventos recuperados do EventService:', events);
-        
-        if (events.length === 0) {
-          addMessage('Não há eventos agendados para os próximos dias.', false);
-        } else {
-          const response = EventService.formatEventResponse(events);
-          console.log('Resposta formatada:', response);
-          addMessage('Aqui estão os seus próximos eventos:\n\n' + response, false);
-        }
-      } 
-      else if (isCreateEventQuery && !isDeleteEventQuery && !isEditEventQuery) {
-        // Processamento para criação de eventos
-        console.log('Solicitação de criação de evento detectada:', text);
-        await handleCreateEventCommand(text);
-      } 
-      else if (isDeleteEventQuery && !isEditEventQuery) {
-        // Processamento para exclusão de eventos
-        console.log('Solicitação de exclusão de evento detectada:', text);
-        await handleDeleteEventCommand(text);
-      }
-      else if (isEditEventQuery) {
-        // Processamento para edição de eventos
-        console.log('Solicitação de edição de evento detectada:', text);
-        await handleEditEventCommand(text);
-      }
-      else {
-        // Processamento para outros comandos
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: text }),
-        });
+      // Envia a mensagem para o servidor
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Erro na comunicação com o servidor');
-        }
-
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error);
-        }
-        
-        addMessage(data.response || 'Desculpe, ocorreu um erro ao processar sua mensagem.', false);
+      if (!response.ok) {
+        throw new Error('Erro na comunicação com o servidor');
       }
+
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Adiciona a resposta do assistente ao chat
+      addMessage(data.response || 'Desculpe, ocorreu um erro ao processar sua mensagem.', false);
+      
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
       toast({
@@ -792,77 +717,85 @@ export default function Chat() {
   };
 
   return (
-    <Box p={0}>
-      <Flex align="center" borderBottom="1px" borderColor="gray.200" bg="white">
-        <Box px={6} py={4} width="100%">
-          <HStack spacing={6} align="center" justify="space-between">
-            <HStack spacing={6}>
-              <Logo />
-              <HStack spacing={2}>
-                <Divider orientation="vertical" height="20px" borderColor="gray.300" />
-                <Text fontSize="xl" color="gray.600" fontWeight="normal">
-                  Chat
-                </Text>
-              </HStack>
-            </HStack>
-            <IconButton
-              aria-label="Limpar chat"
-              icon={<FaTrash />}
-              onClick={onOpen}
-              colorScheme="red"
-              variant="ghost"
-              size="sm"
-            />
-          </HStack>
+    <Box 
+      position="relative"
+      h="calc(100vh - 230px)" 
+      maxH="calc(100vh - 230px)"
+      display="flex"
+      flexDirection="column"
+      bg="white"
+      borderRadius="md"
+      boxShadow="sm"
+      overflow="hidden"
+      w="100%"
+    >
+      {/* Cabeçalho com título e botão de limpar */}
+      <Flex 
+        justify="space-between" 
+        borderBottom="1px" 
+        borderColor="gray.200" 
+        bg="white" 
+        p={2}
+        w="100%"
+        alignItems="center"
+      >
+        <Box display="flex" alignItems="center" ml={2}>
+          <Logo className="scale-75" />
+          <Text ml={2} fontWeight="medium">Chat Inteligente</Text>
         </Box>
+        <IconButton
+          aria-label="Limpar chat"
+          icon={<FaTrash />}
+          onClick={onOpen}
+          colorScheme="red"
+          variant="ghost"
+          size="sm"
+        />
       </Flex>
 
+      {/* Container de mensagens com scroll interno */}
       <Box 
-        position="relative" 
-        h="calc(100vh - 240px)"
+        flex="1"
+        overflowY="auto" 
         px={6}
+        py={4}
+        pb={20} /* Espaço para não sobrepor o input */
+        display="flex"
+        flexDirection="column"
+        justifyContent="flex-start"
       >
-        <Box 
-          flex="1" 
-          overflowY="auto" 
-          h="calc(100% - 70px)"
-          pb={2}
-        >
-          <VStack spacing={4} align="stretch">
-            {messages.length === 0 ? (
-              <Box textAlign="center" py={10}>
-                <Text color="gray.500" fontSize="lg" fontFamily="'Inter', sans-serif">
-                  Olá! Como posso ajudar você hoje?
-                </Text>
-                <Text color="gray.400" fontSize="md" mt={2} fontFamily="'Inter', sans-serif">
-                  Você pode me perguntar sobre sua agenda, compromissos ou pedir para salvar suas senhas.
-                </Text>
+          {messages.length === 0 ? (
+            <Box 
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              width="100%"
+              height="calc(100% - 100px)"
+            >
+              <Box textAlign="center">
+                <Text color="gray.500" fontSize="lg">Nenhuma mensagem ainda. Comece uma conversa!</Text>
               </Box>
-            ) : (
-              messages.map((message) => (
-                <Card
-                  key={message.id}
-                  alignSelf={message.isUser ? 'flex-end' : 'flex-start'}
-                  maxW="80%"
-                  bg={message.isUser ? 'purple.500' : 'white'}
-                  color={message.isUser ? 'white' : 'inherit'}
-                  boxShadow="sm"
+            </Box>
+          ) : (
+            <VStack spacing={4} align="stretch" width="100%" py={4}>
+              {messages.map((message) => (
+                <Card 
+                  key={message.id} 
+                  bg={message.isUser ? 'blue.500' : 'white'}
+                  color={message.isUser ? 'white' : 'black'}
                   borderRadius="lg"
+                  boxShadow="sm"
+                  width={message.isUser ? 'auto' : 'auto'}
+                  maxW="80%"
+                  alignSelf={message.isUser ? 'flex-end' : 'flex-start'}
                 >
-                  <CardBody py={2} px={4}>
+                  <CardBody py={3} px={4}>
                     <HStack spacing={3} align="start">
                       {!message.isUser && (
-                        <Avatar size="sm" name="AI Assistant" bg="purple.500" />
+                        <Avatar size="sm" name="SecretarIA" src="/robot.png" />
                       )}
                       <Box>
-                        <Text
-                          fontSize="sm"
-                          whiteSpace="pre-wrap"
-                          wordBreak="break-word"
-                          fontFamily="'Inter', sans-serif"
-                          lineHeight="1.6"
-                          letterSpacing="0.2px"
-                        >
+                        <Text fontFamily="'Inter', sans-serif">
                           {message.isUser ? message.text : formatEventResponse(message.text)}
                         </Text>
                         <Text
@@ -877,45 +810,50 @@ export default function Chat() {
                     </HStack>
                   </CardBody>
                 </Card>
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </VStack>
-        </Box>
+              ))}
+            </VStack>
+          )}
+          <div ref={messagesEndRef} />
+      </Box>
 
-        <Box 
-          position="absolute" 
-          bottom={0} 
-          left={0} 
-          right={0} 
-          px={6}
-          py={3}
-          bg="white" 
-          borderTop="1px" 
-          borderColor="gray.200"
-        >
-          <HStack>
-            <Input
-              placeholder="Digite sua mensagem..."
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={isProcessing}
-              fontFamily="'Inter', sans-serif"
-            />
-            <IconButton
-              aria-label="Enviar mensagem"
-              icon={<ArrowUpIcon />}
-              onClick={() => handleSendMessage()}
-              colorScheme="purple"
-              disabled={isProcessing || !inputMessage.trim()}
-            />
-            <MicrophoneButton
-              onSpeechResult={handleSpeechResult}
-              disabled={isProcessing}
-            />
-          </HStack>
-        </Box>
+      {/* Input fixo na base do quadro do chat */}
+      <Box 
+        position="absolute"
+        bottom={0}
+        left={0}
+        right={0}
+        width="100%"
+        py={2}
+        px={6}
+        bg="white" 
+        borderTop="1px" 
+        borderColor="gray.200"
+        zIndex={10}
+      >
+        <HStack spacing={2}>
+          <Input
+            placeholder="Digite sua mensagem..."
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isProcessing}
+            fontFamily="'Inter', sans-serif"
+            size="md"
+            height="40px"
+          />
+          <IconButton
+            aria-label="Enviar mensagem"
+            icon={<ArrowUpIcon />}
+            onClick={() => handleSendMessage()}
+            colorScheme="purple"
+            disabled={isProcessing || !inputMessage.trim()}
+            size="sm"
+          />
+          <MicrophoneButton
+            onSpeechResult={handleSpeechResult}
+            disabled={isProcessing}
+          />
+        </HStack>
       </Box>
 
       {/* Modal de confirmação para limpar chat */}

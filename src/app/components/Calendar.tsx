@@ -75,6 +75,7 @@ const Calendar: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Estado para controlar o carregamento
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -104,34 +105,48 @@ const Calendar: React.FC = () => {
     };
   }, []);
 
+  // Cache para armazenar eventos e reduzir chamadas desnecessárias à API
+  const eventsCache = new Map();
+  
   const fetchEvents = async () => {
     try {
-      const response = await fetch('/api/events');
+      // Ativa o indicador de carregamento apenas se não for uma atualização em segundo plano
+      if (!events.length) {
+        setIsLoading(true);
+      }
+      
+      // Verifica se já temos os eventos em cache para o mês atual
+      const cacheKey = format(currentDate, 'yyyy-MM');
+      
+      // Usa o cache se disponível e não estiver forçando atualização
+      if (eventsCache.has(cacheKey) && events.length > 0) {
+        console.log('Usando eventos em cache para', cacheKey);
+        setEvents(eventsCache.get(cacheKey));
+        setIsLoading(false);
+        return;
+      }
+      
+      // Adiciona um timestamp para evitar cache do navegador
+      const response = await fetch(`/api/events?t=${Date.now()}`);
       if (response.ok) {
         const data = await response.json();
-        console.log('Eventos recebidos da API:', data);
         
         if (!Array.isArray(data)) {
           console.error('Dados recebidos não são um array:', data);
+          setIsLoading(false);
           return;
         }
         
-        // Garantindo que cada evento tenha um campo id válido e datas corretamente formatadas
-        const parsedEvents = data.map((event: any) => {
-          // Converte as strings de data para objetos Date
-          const startDate = new Date(event.start);
-          const endDate = new Date(event.end);
-          
-          return {
-            ...event,
-            // Se o evento não tiver um campo id, usa o _id como id
-            id: event.id || event._id,
-            start: startDate,
-            end: endDate
-          };
-        });
+        // Processamento mais eficiente dos eventos
+        const parsedEvents = data.map((event: any) => ({
+          ...event,
+          id: event._id || event.id,
+          start: new Date(event.start),
+          end: new Date(event.end)
+        }));
         
-        console.log('Eventos processados:', parsedEvents);
+        // Armazena em cache
+        eventsCache.set(cacheKey, parsedEvents);
         
         // Define o ano como 2025 para eventos sem ano
         const eventsWithCorrectYear = parsedEvents.map((event: any) => {
@@ -275,6 +290,9 @@ const Calendar: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Ativa o indicador de carregamento
+    setIsLoading(true);
+    
     try {
       // Não precisamos mais gerar um ID, pois o MongoDB irá gerar um
       const event = {
@@ -283,7 +301,29 @@ const Calendar: React.FC = () => {
         end: new Date(newEvent.end || new Date())
       } as Event;
 
-      // Envia o evento para o backend
+      // Fecha o modal imediatamente para melhorar a UX
+      setShowEventModal(false);
+      
+      // Adiciona o evento temporariamente à lista local para feedback imediato
+      const tempEvent = {
+        ...event,
+        id: 'temp-' + Date.now(), // ID temporário
+        start: new Date(event.start),
+        end: new Date(event.end)
+      };
+      
+      // Adiciona o evento temporário à lista
+      setEvents(prevEvents => [...prevEvents, tempEvent]);
+      
+      // Limpa o formulário
+      setNewEvent({
+        title: '',
+        type: 'Evento',
+        start: new Date(),
+        end: new Date()
+      });
+
+      // Envia o evento para o backend em segundo plano
       const response = await fetch('/api/events', {
         method: 'POST',
         headers: {
@@ -296,27 +336,28 @@ const Calendar: React.FC = () => {
         const createdEvent = await response.json();
         console.log('Evento criado:', createdEvent);
         
-        // Adiciona o evento à lista e fecha o modal
-        // Garantindo que o evento tenha um campo id
-        const eventWithId = {
-          ...createdEvent,
-          id: createdEvent.id || createdEvent._id
-        };
-        
-        setEvents([...events, eventWithId]);
-        setShowEventModal(false);
-        setNewEvent({
-          title: '',
-          type: 'Evento',
-          start: new Date(),
-          end: new Date()
-        });
+        // Atualiza a lista de eventos em segundo plano
+        setTimeout(() => {
+          fetchEvents();
+          setIsLoading(false);
+        }, 500); // Pequeno atraso para evitar sobrecarga
       } else {
         const error = await response.json();
         console.error('Erro ao criar evento:', error);
+        
+        // Remove o evento temporário em caso de erro
+        setEvents(prevEvents => prevEvents.filter(e => e.id !== tempEvent.id));
+        setIsLoading(false);
+        
+        // Notifica o usuário sobre o erro
+        alert('Erro ao criar evento. Por favor, tente novamente.');
       }
     } catch (error) {
       console.error('Erro ao criar evento:', error);
+      setIsLoading(false);
+      
+      // Notifica o usuário sobre o erro
+      alert('Erro ao criar evento. Por favor, tente novamente.');
     }
   };
 
@@ -485,11 +526,28 @@ const Calendar: React.FC = () => {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 relative">
+      {/* Indicador de carregamento */}
+      {isLoading && (
+        <div className="absolute top-0 left-0 w-full h-1 bg-gray-200 z-50">
+          <div className="h-full bg-purple-600 animate-pulse" style={{ width: '100%' }}></div>
+        </div>
+      )}
+      
       <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center gap-4">
-          <Logo className="scale-110" />
-          <h2 className="text-2xl font-semibold text-gray-800">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-4 border-b pb-2">
+            <Logo className="scale-110" />
+            <h2 className="text-lg font-medium text-gray-800">
+              Gerenciador de Eventos
+            </h2>
+            {isLoading && (
+              <span className="text-sm text-purple-600 animate-pulse ml-2 flex items-center">
+                Carregando...
+              </span>
+            )}
+          </div>
+          <h2 className="text-2xl font-semibold text-gray-800 mt-2 flex items-center">
             {format(currentDate, 'MMMM', { locale: ptBR })} {format(currentDate, 'yyyy')}
           </h2>
         </div>
@@ -571,7 +629,7 @@ const Calendar: React.FC = () => {
       </div>
 
       {viewMode === 'month' && (
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-2 mt-8">
           {weekDays.map((day) => (
             <div key={day} className="text-center font-bold">
               {day}

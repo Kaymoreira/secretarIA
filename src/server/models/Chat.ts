@@ -22,8 +22,7 @@ const messageSchema = new mongoose.Schema<IMessage>({
 const chatSchema = new mongoose.Schema<IChat>({
   userId: { 
     type: String, 
-    required: true, 
-    unique: true,
+    required: true,
     index: true
   },
   messages: [messageSchema]

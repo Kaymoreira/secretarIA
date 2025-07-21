@@ -1,5 +1,6 @@
 import { endOfWeek, startOfDay, isWithinInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { getApiUrl } from '@/utils/url';
 
 export interface Event {
   id: string;
@@ -16,7 +17,9 @@ export class EventService {
   static async getWeekEvents(fromDate: Date = new Date()): Promise<Event[]> {
     try {
       console.log('[EVENT_SERVICE] Buscando eventos da semana...');
-      const response = await fetch('/api/events');
+      const response = await fetch(getApiUrl('/api/events'), {
+        credentials: 'include'
+      });
 
       if (!response.ok) {
         throw new Error('Erro ao buscar eventos');
@@ -67,11 +70,12 @@ export class EventService {
       const { id, ...eventDataWithoutId } = eventData as any;
       
       console.log('[EVENT_SERVICE] Criando evento:', eventDataWithoutId);
-      const response = await fetch('/api/events', {
+      const response = await fetch(getApiUrl('/api/events'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(eventDataWithoutId)
       });
 
@@ -96,11 +100,12 @@ export class EventService {
   static async updateEvent(id: string, eventData: Partial<Event>): Promise<Event> {
     try {
       console.log('[EVENT_SERVICE] Atualizando evento:', id, eventData);
-      const response = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
+      const response = await fetch(getApiUrl(`/api/events?id=${encodeURIComponent(id)}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({ ...eventData, _id: id })
       });
 
@@ -125,8 +130,9 @@ export class EventService {
   static async deleteEvent(id: string): Promise<void> {
     try {
       console.log('[EVENT_SERVICE] Deletando evento:', id);
-      const response = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE'
+      const response = await fetch(getApiUrl(`/api/events?id=${encodeURIComponent(id)}`), {
+        method: 'DELETE',
+        credentials: 'include'
       });
 
       if (!response.ok) {
